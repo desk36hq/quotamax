@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import bundledCatalog from "./default-models.json";
 import type {
   BurnMode,
   BurnRateEstimate,
@@ -116,17 +116,6 @@ const PLUGIN_DATA_CATALOG_PATH = path.join(
   "models.json"
 );
 
-const BUNDLED_CATALOG_PATH = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../references/models.json"
-);
-
-function resolveCatalogReadPath(): string {
-  if (fs.existsSync(SKILL_CATALOG_PATH)) return SKILL_CATALOG_PATH;
-  if (fs.existsSync(PLUGIN_DATA_CATALOG_PATH)) return PLUGIN_DATA_CATALOG_PATH;
-  return BUNDLED_CATALOG_PATH;
-}
-
 function resolveCatalogWritePath(): string {
   if (fs.existsSync(SKILL_CATALOG_PATH)) return SKILL_CATALOG_PATH;
   fs.mkdirSync(path.dirname(PLUGIN_DATA_CATALOG_PATH), { recursive: true });
@@ -160,8 +149,13 @@ function formatEtaMinutes(mins: number): string {
 }
 
 function loadCatalog(): ModelCatalog {
-  const raw = fs.readFileSync(resolveCatalogReadPath(), "utf8");
-  return JSON.parse(raw) as ModelCatalog;
+  if (fs.existsSync(SKILL_CATALOG_PATH)) {
+    return JSON.parse(fs.readFileSync(SKILL_CATALOG_PATH, "utf8")) as ModelCatalog;
+  }
+  if (fs.existsSync(PLUGIN_DATA_CATALOG_PATH)) {
+    return JSON.parse(fs.readFileSync(PLUGIN_DATA_CATALOG_PATH, "utf8")) as ModelCatalog;
+  }
+  return structuredClone(bundledCatalog) as unknown as ModelCatalog;
 }
 
 function parseWindow(
