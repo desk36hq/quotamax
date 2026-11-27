@@ -16,6 +16,8 @@ import {
   View,
 } from "react-native";
 import {
+  type BankedResetEntry,
+  type BankedResetKind,
   type BurnMode,
   type CostEstimateSummary,
   type CostWindow,
@@ -25,6 +27,8 @@ import {
   type QuotaAdvisorSnapshot,
   type SyncAaResult,
   type TaskTier,
+  addBankedResetRpc,
+  consumeBankedResetRpc,
   getCostsRpc,
   getSnapshotRpc,
   snapshotSubscription,
@@ -32,6 +36,22 @@ import {
 } from "../shared/contract";
 
 type Colors = PluginWorkspacePanelProps["theme"]["colors"];
+
+const RESET_KINDS: readonly { id: BankedResetKind; label: string }[] = [
+  { id: "weekly", label: "Weekly" },
+  { id: "5h", label: "5h" },
+  { id: "full", label: "Full" },
+  { id: "fable", label: "Fable" },
+];
+
+const RESET_EXPIRY_PRESETS: readonly { id: string; label: string; hours: number | null }[] = [
+  { id: "24h", label: "24h", hours: 24 },
+  { id: "3d", label: "3d", hours: 72 },
+  { id: "7d", label: "7d", hours: 168 },
+  { id: "14d", label: "14d", hours: 336 },
+  { id: "30d", label: "30d", hours: 720 },
+  { id: "none", label: "No expiry", hours: null },
+];
 
 const TASK_TIERS: readonly { id: TaskTier; label: string }[] = [
   { id: "quick", label: "Quick" },
@@ -177,9 +197,17 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
   const fetchSnapshot = useRpc(getSnapshotRpc);
   const fetchCosts = useRpc(getCostsRpc);
   const runSyncAa = useRpc(syncAaRpc);
+  const runAddBankedReset = useRpc(addBankedResetRpc);
+  const runConsumeBankedReset = useRpc(consumeBankedResetRpc);
   const focusedComposers = useComposers({ focused: true });
 
   const [snapshot, setSnapshot] = useState<QuotaAdvisorSnapshot | null>(null);
+  const [addResetOpen, setAddResetOpen] = useState(false);
+  const [resetPool, setResetPool] = useState<string>("");
+  const [resetKind, setResetKind] = useState<BankedResetKind>("weekly");
+  const [resetCount, setResetCount] = useState<number>(1);
+  const [resetExpiry, setResetExpiry] = useState<string>("7d");
+  const [savingReset, setSavingReset] = useState(false);
   const [costWindow, setCostWindow] = useState<CostWindow>(() => readInitialCostWindow(tab?.state));
   const [costs, setCosts] = useState<CostEstimateSummary | null>(null);
   const [costsLoading, setCostsLoading] = useState(false);
@@ -415,6 +443,45 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
     }
     return map;
   }, [costs]);
+
+  const handleAddReset = useCallback(async () => {
+    if (savingReset) return;
+    const targetPool = resetPool || trackedPools[0]?.pool || untrackedPools[0]?.pool || "";
+    if (!targetPool) return;
+    const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === resetExpiry);
+    const expiresAt =
+      preset && preset.hours != null
+        ? new Date(Date.now() + preset.hours * 3_600_000).toISOString()
+        : null;
+    setSavingReset(true);
+    try {
+      const next = await runAddBankedReset({
+        pool: targetPool,
+        kind: resetKind,
+        count: resetCount,
+        expiresAt,
+      });
+      applySnapshot(next);
+      setAddResetOpen(false);
+      setResetCount(1);
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingReset(false);
+    }
+  }, [applySnapshot, resetCount, resetExpiry, resetKind, resetPool, runAddBankedReset, savingReset, trackedPools, untrackedPools]);
+
+  const handleConsumeReset = useCallback(
+    async (id: string) => {
+      try {
+        const next = await runConsumeBankedReset({ id, amount: 1 });
+        applySnapshot(next);
+      } catch (err) {
+        setFetchError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [applySnapshot, runConsumeBankedReset]
+  );
 
   const recs = snapshot?.recommendations?.[tier] ?? [];
   const visibleRecs = showAllModels ? recs : recs.slice(0, 3);
@@ -758,14 +825,209 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
               gap: 10,
             }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <Text style={{ color: colors.foreground, fontSize: 12.5, fontWeight: "700" }}>
-                Burn Pace &amp; Resets
-              </Text>
-              <Text style={{ color: colors.foregroundMuted, fontSize: 11 }}>
-                Ratio &gt; 1x = surplus · 15m burn ETA
-              </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.foreground, fontSize: 12.5, fontWeight: "700" }}>
+                  Burn Pace &amp; Resets
+                </Text>
+                <Text style={{ color: colors.foregroundMuted, fontSize: 10.5 }}>
+                  Ratio &gt; 1x = surplus · 15m burn ETA
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => {
+                  if (!resetPool) {
+                    setResetPool(trackedPools[0]?.pool || untrackedPools[0]?.pool || "");
+                  }
+                  setAddResetOpen((v) => !v);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Log banked reset"
+                style={({ pressed }) => ({
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
+                  borderRadius: 7,
+                  borderWidth: 1,
+                  borderColor: addResetOpen ? colors.accent : colors.border,
+                  backgroundColor: addResetOpen
+                    ? "rgba(59, 130, 246, 0.14)"
+                    : pressed
+                      ? colors.surface2
+                      : colors.surface0,
+                })}
+              >
+                <Text
+                  style={{
+                    color: addResetOpen ? colors.accent : colors.foreground,
+                    fontSize: 11,
+                    fontWeight: "600",
+                  }}
+                >
+                  {addResetOpen ? "Close" : "+ Reset"}
+                </Text>
+              </Pressable>
             </View>
+
+            {addResetOpen ? (
+              <View
+                style={{
+                  backgroundColor: colors.surface0,
+                  borderRadius: 9,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  padding: 10,
+                  gap: 8,
+                }}
+              >
+                <Text style={{ color: colors.foreground, fontSize: 11.5, fontWeight: "700" }}>
+                  Log banked reset
+                </Text>
+
+                {/* Pool chips */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
+                  {[...trackedPools, ...untrackedPools].slice(0, 8).map((p) => {
+                    const active = (resetPool || trackedPools[0]?.pool) === p.pool;
+                    return (
+                      <Pressable
+                        key={p.pool}
+                        onPress={() => setResetPool(p.pool)}
+                        style={{
+                          paddingHorizontal: 7,
+                          paddingVertical: 3,
+                          borderRadius: 6,
+                          borderWidth: 1,
+                          borderColor: active ? colors.accent : colors.border,
+                          backgroundColor: active ? "rgba(59, 130, 246, 0.14)" : colors.surface1,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 10.5,
+                            fontWeight: active ? "700" : "500",
+                            color: active ? colors.accent : colors.foregroundMuted,
+                          }}
+                        >
+                          {p.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Kind + Count row */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                  <View style={{ flexDirection: "row", gap: 4 }}>
+                    {RESET_KINDS.map((k) => {
+                      const active = resetKind === k.id;
+                      return (
+                        <Pressable
+                          key={k.id}
+                          onPress={() => setResetKind(k.id)}
+                          style={{
+                            paddingHorizontal: 7,
+                            paddingVertical: 3,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: active ? colors.accent : colors.border,
+                            backgroundColor: active ? colors.surface2 : "transparent",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: active ? "700" : "500",
+                              color: active ? colors.foreground : colors.foregroundMuted,
+                            }}
+                          >
+                            {k.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                    <Text style={{ color: colors.foregroundMuted, fontSize: 10.5 }}>Qty:</Text>
+                    {[1, 2, 3].map((n) => {
+                      const active = resetCount === n;
+                      return (
+                        <Pressable
+                          key={n}
+                          onPress={() => setResetCount(n)}
+                          style={{
+                            paddingHorizontal: 7,
+                            paddingVertical: 2.5,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: active ? colors.accent : colors.border,
+                            backgroundColor: active ? colors.surface2 : "transparent",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: active ? "700" : "500",
+                              color: active ? colors.foreground : colors.foregroundMuted,
+                            }}
+                          >
+                            {n}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Expiry presets + Save */}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, flex: 1 }}>
+                    {RESET_EXPIRY_PRESETS.map((ex) => {
+                      const active = resetExpiry === ex.id;
+                      return (
+                        <Pressable
+                          key={ex.id}
+                          onPress={() => setResetExpiry(ex.id)}
+                          style={{
+                            paddingHorizontal: 6,
+                            paddingVertical: 2.5,
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: active ? colors.accent : colors.border,
+                            backgroundColor: active ? colors.surface2 : "transparent",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 10,
+                              fontWeight: active ? "700" : "500",
+                              color: active ? colors.foreground : colors.foregroundMuted,
+                            }}
+                          >
+                            {ex.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  <Pressable
+                    onPress={() => void handleAddReset()}
+                    disabled={savingReset}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 4.5,
+                      borderRadius: 7,
+                      backgroundColor: colors.accent,
+                      opacity: savingReset ? 0.6 : 1,
+                    }}
+                  >
+                    <Text style={{ color: colors.accentForeground, fontSize: 11, fontWeight: "700" }}>
+                      {savingReset ? "Saving…" : "Save"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
 
             <View style={{ gap: 8 }}>
               {trackedPools.map((pool) => (
@@ -774,6 +1036,7 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
                   pool={pool}
                   poolCost={costByPool.get(pool.pool) ?? null}
                   costWindow={costWindow}
+                  onConsumeReset={handleConsumeReset}
                   colors={colors}
                 />
               ))}
@@ -889,11 +1152,13 @@ function PoolCard({
   pool,
   poolCost,
   costWindow,
+  onConsumeReset,
   colors,
 }: {
   pool: PoolStatus;
   poolCost: PoolCostBreakdown | null;
   costWindow: CostWindow;
+  onConsumeReset: (id: string) => void;
   colors: Colors;
 }) {
   const mc = modeColors(pool.mode, colors);
@@ -981,6 +1246,109 @@ function PoolCard({
           fillColor={shortBarColor}
           colors={colors}
         />
+      ) : null}
+
+      {/* Banked Resets & Strategic Advice */}
+      {pool.bankedResets && pool.bankedResets.length > 0 ? (
+        <View
+          style={{
+            gap: 5,
+            paddingTop: 5,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          {pool.resetAdvice && pool.resetAdvice.action !== "hold" ? (
+            <View
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 5,
+                borderRadius: 7,
+                backgroundColor:
+                  pool.resetAdvice.action === "pop_now"
+                    ? "rgba(52, 211, 153, 0.14)"
+                    : pool.resetAdvice.severity === "urgent"
+                      ? "rgba(239, 68, 68, 0.16)"
+                      : "rgba(245, 158, 11, 0.14)",
+                borderWidth: 1,
+                borderColor:
+                  pool.resetAdvice.action === "pop_now"
+                    ? "rgba(52, 211, 153, 0.4)"
+                    : pool.resetAdvice.severity === "urgent"
+                      ? "rgba(239, 68, 68, 0.45)"
+                      : "rgba(245, 158, 11, 0.4)",
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color:
+                    pool.resetAdvice.action === "pop_now"
+                      ? colors.statusSuccess
+                      : pool.resetAdvice.severity === "urgent"
+                        ? colors.statusDanger
+                        : colors.statusWarning,
+                }}
+              >
+                ⚡ {pool.resetAdvice.headline}
+              </Text>
+              <Text style={{ color: colors.foregroundMuted, fontSize: 10, marginTop: 1 }}>
+                {pool.resetAdvice.detail}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+            {pool.bankedResets.map((r: BankedResetEntry) => {
+              const urgent = r.remainingHours != null && r.remainingHours <= 12;
+              const soon = r.remainingHours != null && r.remainingHours <= 48;
+              const pillColor = urgent
+                ? colors.statusDanger
+                : soon
+                  ? colors.statusWarning
+                  : colors.accent;
+              return (
+                <View
+                  key={r.id}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 5,
+                    paddingHorizontal: 7,
+                    paddingVertical: 2.5,
+                    borderRadius: 6,
+                    backgroundColor: colors.surface1,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Text style={{ color: pillColor, fontSize: 10.5, fontWeight: "700", fontFamily: monoFont() }}>
+                    ⚡ {r.count}× {r.kind}
+                    {r.remainingHours != null ? ` · exp ${formatDuration(r.remainingHours)}` : ""}
+                  </Text>
+                  {r.source === "manual" ? (
+                    <Pressable
+                      onPress={() => onConsumeReset(r.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Mark ${r.kind} reset used`}
+                      style={{
+                        paddingHorizontal: 5,
+                        paddingVertical: 1,
+                        borderRadius: 4,
+                        backgroundColor: colors.surface2,
+                      }}
+                    >
+                      <Text style={{ color: colors.foregroundMuted, fontSize: 9.5, fontWeight: "600" }}>
+                        Mark used
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </View>
       ) : null}
 
       {/* 15m Burn Rate & Limit ETA */}

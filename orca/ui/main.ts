@@ -1,8 +1,18 @@
 // QuotaMax's Orca panel: an HTML panel styled like the Paseo panel. This file is the only
 // part that touches the DOM and Orca's frame API (`orca`); render.ts draws, styles.ts
 // styles. All data comes from the plugin's worker (orca/worker.ts) via orca.plugin.
-import type { CostWindow, QuotaAdvisorSnapshot, TaskTier } from "../../shared/types";
-import { AA_KEY_URL, COST_WINDOWS, initialState, recKey, renderPanel, TASK_TIERS } from "./render";
+import type { BankedResetKind, CostWindow, QuotaAdvisorSnapshot, TaskTier } from "../../shared/types";
+import {
+  AA_KEY_URL,
+  COST_WINDOWS,
+  RESET_EXPIRY_PRESETS,
+  RESET_KINDS,
+  TASK_TIERS,
+  initialState,
+  recKey,
+  renderPanel,
+  sortPools,
+} from "./render";
 import { CSS } from "./styles";
 
 const state = initialState();
@@ -162,6 +172,43 @@ async function syncAa(from: string): Promise<void> {
   }
 }
 
+async function saveBankedReset(): Promise<void> {
+  if (state.savingReset) return;
+  const pools = state.snapshot ? sortPools(state.snapshot.pools) : { tracked: [], untracked: [] };
+  const targetPool = state.resetPool || pools.tracked[0]?.pool || pools.untracked[0]?.pool || "";
+  if (!targetPool) return;
+  const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === state.resetExpiry);
+  const expiresAt =
+    preset && preset.hours != null ? new Date(Date.now() + preset.hours * 3_600_000).toISOString() : null;
+  state.savingReset = true;
+  render();
+  try {
+    const next = await orca.plugin.request("quotamax.addBankedReset", {
+      pool: targetPool,
+      kind: state.resetKind,
+      count: state.resetCount,
+      expiresAt,
+    });
+    state.addResetOpen = false;
+    state.resetCount = 1;
+    applySnapshot(next);
+  } catch (err) {
+    state.fetchError = errorText(err);
+  } finally {
+    state.savingReset = false;
+    render();
+  }
+}
+
+async function consumeBankedReset(id: string): Promise<void> {
+  try {
+    applySnapshot(await orca.plugin.request("quotamax.consumeBankedReset", { id, amount: 1 }));
+  } catch (err) {
+    state.fetchError = errorText(err);
+    render();
+  }
+}
+
 root.addEventListener("click", (event) => {
   const el = (event.target as Element | null)?.closest<HTMLElement>("[data-action]");
   if (!el || el.hasAttribute("disabled")) return;
@@ -227,6 +274,29 @@ root.addEventListener("click", (event) => {
       if (orca.shell) void orca.shell.openExternal(AA_KEY_URL).catch(() => {});
       else state.keyNotice = { ok: true, text: `Get a free key at ${AA_KEY_URL}` };
       break;
+    case "toggle-add-reset":
+      state.addResetOpen = !state.addResetOpen;
+      break;
+    case "reset-pool":
+      if (value) state.resetPool = value;
+      break;
+    case "reset-kind":
+      if (RESET_KINDS.some((k) => k.id === value)) state.resetKind = value as BankedResetKind;
+      break;
+    case "reset-count": {
+      const n = Number(value);
+      if (Number.isInteger(n) && n >= 1 && n <= 99) state.resetCount = n;
+      break;
+    }
+    case "reset-expiry":
+      if (RESET_EXPIRY_PRESETS.some((p) => p.id === value)) state.resetExpiry = value;
+      break;
+    case "save-reset":
+      void saveBankedReset();
+      return;
+    case "consume-reset":
+      if (value) void consumeBankedReset(value);
+      return;
     default:
       return;
   }

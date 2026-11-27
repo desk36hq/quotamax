@@ -138,6 +138,18 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
     return { hasKey: Boolean(trimmed) };
   });
   orca.panels.handle("quotamax.apply", async (input) => applyRecommendation(orca.host, input));
+  orca.panels.handle("quotamax.addBankedReset", async (input) => {
+    await ready;
+    return service.addBankedReset(input);
+  });
+  orca.panels.handle("quotamax.consumeBankedReset", async ({ id, amount }) => {
+    await ready;
+    return service.consumeBankedReset(id, amount);
+  });
+  orca.panels.handle("quotamax.deleteBankedReset", async ({ id }) => {
+    await ready;
+    return service.deleteBankedReset(id);
+  });
 
   orca.commands.register("quotamax.refresh", async () => {
     await ready;

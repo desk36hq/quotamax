@@ -3,6 +3,8 @@
 // comes from data is escaped with `esc`. Buttons carry `data-action` (and `data-value`)
 // for main.ts's click handler, and a stable `id` so focus survives a re-render.
 import type {
+  BankedResetEntry,
+  BankedResetKind,
   CostEstimateSummary,
   CostWindow,
   ModelRecommendation,
@@ -27,6 +29,22 @@ export const COST_WINDOWS: readonly { id: CostWindow; label: string }[] = [
   { id: "24h", label: "24h" },
   { id: "7d", label: "7d" },
   { id: "30d", label: "30d" },
+];
+
+export const RESET_KINDS: readonly { id: BankedResetKind; label: string }[] = [
+  { id: "weekly", label: "Weekly" },
+  { id: "5h", label: "5h" },
+  { id: "full", label: "Full" },
+  { id: "fable", label: "Fable" },
+];
+
+export const RESET_EXPIRY_PRESETS: readonly { id: string; label: string; hours: number | null }[] = [
+  { id: "24h", label: "24h", hours: 24 },
+  { id: "3d", label: "3d", hours: 72 },
+  { id: "7d", label: "7d", hours: 168 },
+  { id: "14d", label: "14d", hours: 336 },
+  { id: "30d", label: "30d", hours: 720 },
+  { id: "none", label: "No expiry", hours: null },
 ];
 
 export const AA_KEY_URL = "https://artificialanalysis.ai/insights";
@@ -57,6 +75,12 @@ export interface ViewState {
   syncNotice: SyncAaResult | null;
   /** A snapshot was pushed recently (Paseo's "live" subscription dot). */
   live: boolean;
+  addResetOpen: boolean;
+  resetPool: string;
+  resetKind: BankedResetKind;
+  resetCount: number;
+  resetExpiry: string;
+  savingReset: boolean;
 }
 
 export function initialState(): ViewState {
@@ -84,6 +108,12 @@ export function initialState(): ViewState {
     syncing: false,
     syncNotice: null,
     live: false,
+    addResetOpen: false,
+    resetPool: "",
+    resetKind: "weekly",
+    resetCount: 1,
+    resetExpiry: "7d",
+    savingReset: false,
   };
 }
 
@@ -264,6 +294,30 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
     poolCost && poolCost.costUsd > 0 ? ` · ${costWindow} est. ${formatUsd(poolCost.costUsd)}` : ""
   }`;
   const sev = pool.burn.etaSeverity;
+  const banked = pool.bankedResets ?? [];
+  const advice = pool.resetAdvice;
+  const adviceHtml =
+    advice && advice.action !== "hold"
+      ? `<div class="qm-reset-advice is-${advice.action === "pop_now" ? "ok" : advice.severity === "urgent" ? "danger" : "warn"}"><strong>⚡ ${esc(advice.headline)}</strong><span>${esc(advice.detail)}</span></div>`
+      : "";
+  const bankedHtml = banked.length
+    ? `<div class="qm-banked">${adviceHtml}<div class="qm-banked-pills">${banked
+        .map((r: BankedResetEntry) => {
+          const urgent = r.remainingHours != null && r.remainingHours <= 12;
+          const soon = r.remainingHours != null && r.remainingHours <= 48;
+          const cls = urgent ? "is-danger" : soon ? "is-warn" : "";
+          const exp = r.remainingHours != null ? ` · exp ${formatDuration(r.remainingHours)}` : "";
+          const useBtn =
+            r.source === "manual"
+              ? button("qm-use-reset", "consume-reset", "Mark used", {
+                  value: r.id,
+                  label: `Mark ${r.kind} reset used`,
+                })
+              : "";
+          return `<span class="qm-banked-pill ${cls}"><span>⚡ ${r.count}× ${esc(r.kind)}${esc(exp)}</span>${useBtn}</span>`;
+        })
+        .join("")}</div></div>`
+    : "";
   return `<div class="qm-pool mode-${esc(pool.mode)}">
   <div class="qm-pool-head">
     <div class="qm-pool-name"><strong>${esc(pool.label)}</strong>${pool.planLabel ? `<span>${esc(pool.planLabel)}</span>` : ""}</div>
@@ -271,12 +325,54 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
   </div>
   ${pool.weekly ? barRow(longLabel, pool.weekly.usedPct, formatDuration(pool.weekly.remainingHours), weeklyFill) : ""}
   ${pool.short ? barRow("5-hour", pool.short.usedPct, formatDuration(pool.short.remainingHours), shortFill) : ""}
+  ${bankedHtml}
   <div class="qm-burn"><span>${esc(burnText)}</span><span class="qm-eta${sev === "idle" ? "" : ` is-${sev}`}">${sev === "idle" ? "" : icons.flame(11)}${esc(pool.burn.etaLabel)}</span></div>
+</div>`;
+}
+
+function renderAddResetForm(s: ViewState, pools: PoolStatus[]): string {
+  if (!s.addResetOpen) return "";
+  const selectedPool = s.resetPool || pools[0]?.pool || "";
+  const poolBtns = pools
+    .slice(0, 8)
+    .map((p) =>
+      button(`qm-chip-btn${p.pool === selectedPool ? " is-active" : ""}`, "reset-pool", esc(p.label), {
+        value: p.pool,
+        pressed: p.pool === selectedPool,
+      })
+    )
+    .join("");
+  const kindBtns = RESET_KINDS.map((k) =>
+    button(`qm-chip-btn${k.id === s.resetKind ? " is-active" : ""}`, "reset-kind", esc(k.label), {
+      value: k.id,
+      pressed: k.id === s.resetKind,
+    })
+  ).join("");
+  const qtyBtns = [1, 2, 3]
+    .map((n) =>
+      button(`qm-chip-btn${n === s.resetCount ? " is-active" : ""}`, "reset-count", String(n), {
+        value: n,
+        pressed: n === s.resetCount,
+      })
+    )
+    .join("");
+  const expBtns = RESET_EXPIRY_PRESETS.map((ex) =>
+    button(`qm-chip-btn${ex.id === s.resetExpiry ? " is-active" : ""}`, "reset-expiry", esc(ex.label), {
+      value: ex.id,
+      pressed: ex.id === s.resetExpiry,
+    })
+  ).join("");
+  return `<div class="qm-reset-form">
+  <div class="qm-reset-form-title">Log banked reset</div>
+  <div class="qm-chip-row">${poolBtns}</div>
+  <div class="qm-reset-form-row"><div class="qm-chip-row">${kindBtns}</div><div class="qm-chip-row"><span class="qm-hint">Qty:</span>${qtyBtns}</div></div>
+  <div class="qm-reset-form-row"><div class="qm-chip-row">${expBtns}</div>${button("qm-btn is-primary", "save-reset", s.savingReset ? "Saving…" : "Save", { disabled: s.savingReset })}</div>
 </div>`;
 }
 
 function renderPools(s: ViewState, tracked: PoolStatus[], untracked: PoolStatus[]): string {
   const costByPool = new Map((s.costs?.byPool ?? []).map((p) => [p.pool, p]));
+  const allPools = [...tracked, ...untracked];
   const untrackedHtml = untracked.length
     ? `<div class="qm-untracked">Untracked: ${untracked
         .map((p) => `<span title="${esc(p.reason)}">${esc(p.label)}</span>`)
@@ -287,7 +383,11 @@ function renderPools(s: ViewState, tracked: PoolStatus[], untracked: PoolStatus[
       }`
     : "";
   return `<section class="qm-card" aria-label="Burn pace and resets">
-  <div class="qm-card-head"><h2>Burn Pace &amp; Resets</h2><span class="qm-hint">Ratio &gt; 1x = surplus · 15m burn ETA</span></div>
+  <div class="qm-card-head">
+    <div><h2>Burn Pace &amp; Resets</h2><div class="qm-hint">Ratio &gt; 1x = surplus · 15m burn ETA</div></div>
+    ${button(`qm-btn${s.addResetOpen ? " is-active" : ""}`, "toggle-add-reset", s.addResetOpen ? "Close" : "+ Reset", { label: "Log banked reset", pressed: s.addResetOpen })}
+  </div>
+  ${renderAddResetForm(s, allPools)}
   ${tracked.length ? `<div class="qm-pools">${tracked.map((p) => renderPool(p, costByPool.get(p.pool), s.costWindow)).join("")}</div>` : ""}
   ${untrackedHtml}
 </section>`;

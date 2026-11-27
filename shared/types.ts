@@ -48,6 +48,36 @@ export interface BurnRateEstimate {
   etaWindow: "5h" | "weekly" | null;
 }
 
+export type BankedResetKind = "5h" | "weekly" | "full" | "fable";
+export type BankedResetSource = "api" | "manual";
+
+export interface BankedResetEntry {
+  id: string;
+  pool: string;
+  kind: BankedResetKind;
+  count: number;
+  expiresAt: string | null;
+  remainingHours: number | null;
+  source: BankedResetSource;
+  label?: string;
+  note?: string;
+}
+
+export interface ResetAdvice {
+  action: "pop_now" | "burn_before_expiry" | "hold";
+  severity: "urgent" | "warning" | "info";
+  headline: string;
+  detail: string;
+}
+
+export interface AddBankedResetInput {
+  pool: string;
+  kind: BankedResetKind;
+  count?: number;
+  expiresAt?: string | null;
+  note?: string;
+}
+
 export interface PoolStatus {
   pool: string;
   label: string;
@@ -62,6 +92,8 @@ export interface PoolStatus {
   weekly: WindowStats | null;
   short: WindowStats | null;
   burn: BurnRateEstimate;
+  bankedResets?: BankedResetEntry[];
+  resetAdvice?: ResetAdvice | null;
 }
 
 export interface ModelRecommendation {

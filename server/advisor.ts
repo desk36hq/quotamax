@@ -4,7 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type {
+  AddBankedResetInput,
   AdvisorSettingsValues,
+  BankedResetEntry,
   BurnMode,
   BurnRateEstimate,
   ModelRecommendation,
@@ -14,6 +16,7 @@ import type {
   TaskTier,
   WindowStats,
 } from "../shared/types";
+import { BankedResetManager, computeResetAdvice } from "./bankedResets";
 import type { QuotaSource, UsageReportEntry, UsageWindowRaw } from "./quotaSource";
 
 const AA_ENDPOINTS = [
@@ -192,6 +195,8 @@ export interface QuotaAdvisorOptions {
   dataDir: string;
   /** Catalogs synced under another host, read when this host has none of its own. */
   fallbackCatalogPaths?: string[];
+  /** Disable live read-only banked-reset API calls (for deterministic tests). */
+  disableBankedResetApi?: boolean;
 }
 
 function skillCatalogPath(): string {
@@ -564,6 +569,7 @@ export class QuotaAdvisorService {
   private readonly bundled: ModelCatalog;
   private readonly dataCatalogPath: string;
   private readonly fallbackCatalogPaths: string[];
+  private readonly bankedResets: BankedResetManager;
   private latest: QuotaAdvisorSnapshot | null = null;
   private inflight: Promise<QuotaAdvisorSnapshot> | null = null;
   private syncInflight: Promise<SyncAaResult> | null = null;
@@ -579,6 +585,25 @@ export class QuotaAdvisorService {
     this.bundled = bundled;
     this.dataCatalogPath = path.join(options.dataDir, "models.json");
     this.fallbackCatalogPaths = options.fallbackCatalogPaths ?? [];
+    this.bankedResets = new BankedResetManager({
+      dataDir: options.dataDir,
+      disableApiFetch: options.disableBankedResetApi,
+    });
+  }
+
+  async addBankedReset(input: AddBankedResetInput): Promise<QuotaAdvisorSnapshot> {
+    this.bankedResets.addManual(input);
+    return this.poll(false);
+  }
+
+  async consumeBankedReset(id: string, amount = 1): Promise<QuotaAdvisorSnapshot> {
+    this.bankedResets.consumeManual(id, amount);
+    return this.poll(false);
+  }
+
+  async deleteBankedReset(id: string): Promise<QuotaAdvisorSnapshot> {
+    this.bankedResets.deleteManual(id);
+    return this.poll(false);
   }
 
   /** Burn-rate samples, so a host whose worker restarts can keep its 15-minute history. */
@@ -834,15 +859,18 @@ export class QuotaAdvisorService {
 
     try {
       const catalog = this.loadCatalog();
-      const reports: UsageReportEntry[] = await this.quotaSource.fetch(
-        refresh,
-        this.abortController.signal
-      );
+      const [reports, bankedByPool]: [UsageReportEntry[], Map<string, BankedResetEntry[]>] =
+        await Promise.all([
+          this.quotaSource.fetch(refresh, this.abortController.signal),
+          this.bankedResets.getByPool(refresh, nowMs),
+        ]);
 
       const rawWindowsByPool = new Map<string, UsageWindowRaw[]>();
       const pools: PoolStatus[] = Object.entries(catalog.pools).map(([poolKey, cfg]) => {
+        const poolBanked = bankedByPool.get(poolKey) ?? [];
         const entry = findPoolEntry(reports, cfg);
         if (!entry || entry.defaultEnabled === false || entry.report?.status !== "available") {
+          const { advice } = computeResetAdvice(poolBanked, null, null);
           return {
             pool: poolKey,
             label: cfg.label,
@@ -867,6 +895,8 @@ export class QuotaAdvisorService {
               etaMinutes: null,
               etaWindow: null,
             },
+            bankedResets: poolBanked,
+            resetAdvice: advice,
           };
         }
 
@@ -887,6 +917,7 @@ export class QuotaAdvisorService {
         const burn = estimateBurn(samples, nowMs, short, weekly);
 
         if (!weekly && !short) {
+          const { advice } = computeResetAdvice(poolBanked, null, null);
           return {
             pool: poolKey,
             label: cfg.label,
@@ -900,6 +931,8 @@ export class QuotaAdvisorService {
             weekly: null,
             short: null,
             burn,
+            bankedResets: poolBanked,
+            resetAdvice: advice,
           };
         }
 
@@ -954,6 +987,28 @@ export class QuotaAdvisorService {
           reason += `; active 5h block resets in ${formatDuration(short.remainingHours)}`;
         }
 
+        const fableWin =
+          poolKey === "claude"
+            ? parseWindow(
+                pickWindow(windows, ["weekly_model_fable"]),
+                nowMs,
+                cfg.weeklyWindowSeconds ?? 604_800
+              )
+            : null;
+        const {
+          advice: resetAdvice,
+          forceHammer,
+          urgencyBoost,
+        } = computeResetAdvice(poolBanked, weekly, short, fableWin);
+
+        if (forceHammer && mode !== "THROTTLED_5H" && mode !== "EXHAUSTED") {
+          mode = "HAMMER";
+          urgencyBonus = Math.max(urgencyBonus, urgencyBoost);
+          if (resetAdvice) {
+            reason = `${resetAdvice.headline} (${reason})`;
+          }
+        }
+
         return {
           pool: poolKey,
           label: cfg.label,
@@ -967,6 +1022,8 @@ export class QuotaAdvisorService {
           weekly,
           short,
           burn,
+          bankedResets: poolBanked,
+          resetAdvice,
         };
       });
 

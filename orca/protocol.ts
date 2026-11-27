@@ -1,6 +1,7 @@
 // The Orca panel <-> worker contract, declared once: orca/panel.tsx and orca/worker.ts
 // both read it. Data types are the host-neutral ones in shared/types.ts.
 import type {
+  AddBankedResetInput,
   CostEstimateSummary,
   CostWindow,
   QuotaAdvisorSnapshot,
@@ -20,6 +21,12 @@ declare module "orca" {
     "quotamax.aaKey": { input: { key: string }; output: { hasKey: boolean } };
     /** Preview (confirm: false) or send (confirm: true) the model command to an idle agent. */
     "quotamax.apply": { input: ApplyRequest; output: ApplyResult };
+    /** Log a manual banked reset with optional expiry. */
+    "quotamax.addBankedReset": { input: AddBankedResetInput; output: QuotaAdvisorSnapshot };
+    /** Decrement/consume a manual banked reset. */
+    "quotamax.consumeBankedReset": { input: { id: string; amount?: number }; output: QuotaAdvisorSnapshot };
+    /** Remove a manual banked reset. */
+    "quotamax.deleteBankedReset": { input: { id: string }; output: QuotaAdvisorSnapshot };
   }
   interface PluginPanelEvents {
     /** Posted to every open panel after each poll. */

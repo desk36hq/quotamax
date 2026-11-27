@@ -153,6 +153,30 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--orca-ring, 
 .qm-reasons { margin: 0; padding: 0 0 0 14px; color: var(--qm-muted); font-size: 11px; line-height: 15px; }
 .qm-reasons b { color: var(--qm-fg); font-weight: 600; }
 
+/* Banked resets */
+.qm-banked { display: flex; flex-direction: column; gap: 5px; padding-top: 5px; border-top: 1px solid var(--qm-border); }
+.qm-banked-pills { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.qm-banked-pill { display: inline-flex; align-items: center; gap: 5px; padding: 2.5px 7px; border-radius: 6px; background: var(--qm-s1); border: 1px solid var(--qm-border); font-size: 10.5px; font-weight: 700; font-family: var(--qm-mono); color: var(--qm-accent); }
+.qm-banked-pill.is-warn { color: var(--qm-warning); }
+.qm-banked-pill.is-danger { color: var(--qm-danger); }
+.qm-use-reset { padding: 1px 5px; border-radius: 4px; border: 0; background: var(--qm-s2); color: var(--qm-muted); font: inherit; font-size: 9.5px; font-weight: 600; cursor: pointer; }
+.qm-use-reset:hover { color: var(--qm-fg); }
+.qm-reset-advice { display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--qm-border); }
+.qm-reset-advice strong { font-size: 11px; font-weight: 700; }
+.qm-reset-advice span { font-size: 10px; color: var(--qm-muted); }
+.qm-reset-advice.is-ok { background: rgba(52, 211, 153, .14); border-color: rgba(52, 211, 153, .4); }
+.qm-reset-advice.is-ok strong { color: var(--qm-success); }
+.qm-reset-advice.is-warn { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .4); }
+.qm-reset-advice.is-warn strong { color: var(--qm-warning); }
+.qm-reset-advice.is-danger { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .45); }
+.qm-reset-advice.is-danger strong { color: var(--qm-danger); }
+.qm-reset-form { background: var(--qm-s0); border: 1px solid var(--qm-border); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.qm-reset-form-title { font-size: 11.5px; font-weight: 700; color: var(--qm-fg); }
+.qm-reset-form-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.qm-chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.qm-chip-btn { padding: 3px 7px; border-radius: 6px; border: 1px solid var(--qm-border); background: var(--qm-s1); color: var(--qm-muted); font: inherit; font-size: 10.5px; font-weight: 500; cursor: pointer; }
+.qm-chip-btn.is-active { border-color: var(--qm-accent); background: rgba(59, 130, 246, .14); color: var(--qm-accent); font-weight: 700; }
+
 /* Costs */
 .qm-kpis { display: flex; gap: 8px; }
 .qm-kpi { flex: 1; min-width: 0; background: var(--qm-s0); border: 1px solid var(--qm-border); border-radius: 9px; padding: 9px; display: flex; flex-direction: column; gap: 2px; }

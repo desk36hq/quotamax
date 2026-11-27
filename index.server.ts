@@ -10,7 +10,15 @@ import {
   fetchAlibabaUsage,
 } from "./server/alibabaUsage";
 import { CostEstimatorService } from "./server/costEstimator";
-import { getCostsRpc, getSnapshotRpc, snapshotSubscription, syncAaRpc } from "./shared/contract";
+import {
+  addBankedResetRpc,
+  consumeBankedResetRpc,
+  deleteBankedResetRpc,
+  getCostsRpc,
+  getSnapshotRpc,
+  snapshotSubscription,
+  syncAaRpc,
+} from "./shared/contract";
 import { advisorSettings } from "./shared/settings";
 
 export default function contribute(server: PluginServerContext) {
@@ -64,6 +72,18 @@ export default function contribute(server: PluginServerContext) {
 
   server.handle(syncAaRpc, async (input) => {
     return service.syncArtificialAnalysis(input.recalibrate);
+  });
+
+  server.handle(addBankedResetRpc, async (input) => {
+    return service.addBankedReset(input);
+  });
+
+  server.handle(consumeBankedResetRpc, async (input) => {
+    return service.consumeBankedReset(input.id, input.amount);
+  });
+
+  server.handle(deleteBankedResetRpc, async (input) => {
+    return service.deleteBankedReset(input.id);
   });
 
   server.handle(snapshotSubscription, (_input, ctx) => {

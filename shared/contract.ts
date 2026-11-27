@@ -12,6 +12,10 @@ import {
 } from "./types";
 
 export type {
+  AddBankedResetInput,
+  BankedResetEntry,
+  BankedResetKind,
+  BankedResetSource,
   BurnMode,
   BurnRateEstimate,
   CostCategorySplit,
@@ -24,6 +28,7 @@ export type {
   PoolCostBreakdown,
   PoolStatus,
   QuotaAdvisorSnapshot,
+  ResetAdvice,
   SyncAaResult,
   TaskTier,
   WindowStats,
@@ -56,6 +61,37 @@ export const syncAaRpc = defineRpc({
     recalibrate: z.boolean().optional(),
   }),
   output: z.custom<SyncAaResult>(),
+});
+
+export const BankedResetKindSchema = z.enum(["5h", "weekly", "full", "fable"]);
+
+export const addBankedResetRpc = defineRpc({
+  name: "quota-advisor.add-banked-reset",
+  input: z.object({
+    pool: z.string().min(1),
+    kind: BankedResetKindSchema,
+    count: z.number().int().min(1).max(99).optional(),
+    expiresAt: z.string().nullable().optional(),
+    note: z.string().max(160).optional(),
+  }),
+  output: z.custom<QuotaAdvisorSnapshot>(),
+});
+
+export const consumeBankedResetRpc = defineRpc({
+  name: "quota-advisor.consume-banked-reset",
+  input: z.object({
+    id: z.string().min(1),
+    amount: z.number().int().min(1).max(99).optional(),
+  }),
+  output: z.custom<QuotaAdvisorSnapshot>(),
+});
+
+export const deleteBankedResetRpc = defineRpc({
+  name: "quota-advisor.delete-banked-reset",
+  input: z.object({
+    id: z.string().min(1),
+  }),
+  output: z.custom<QuotaAdvisorSnapshot>(),
 });
 
 export const snapshotSubscription = defineSubscription({
