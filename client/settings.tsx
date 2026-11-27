@@ -5,7 +5,7 @@ import {
   useSettings,
 } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsSection } from "@getpaseo/plugin/client/ui";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Switch, Text, TextInput, View } from "react-native";
 import { type SyncAaResult, syncAaRpc } from "../shared/contract";
 import { advisorSettings } from "../shared/settings";
@@ -20,12 +20,21 @@ export function QuotaAdvisorSettings({ theme }: PluginSurfaceProps) {
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncAaResult | null>(null);
+  const syncingRef = useRef(false);
+  const lastSavedKeyRef = useRef<string | null>(null);
 
+  const savedAaKey = settings.status === "ready" ? settings.values.aaApiKey : null;
   useEffect(() => {
-    if (settings.status === "ready") {
-      setApiKeyDraft(settings.values.aaApiKey);
-    }
-  }, [settings.status, settings.status === "ready" ? settings.values.aaApiKey : ""]);
+    if (savedAaKey === null) return;
+    setApiKeyDraft((prev) => {
+      // Only overwrite draft if user hasn't modified it from the last synced value
+      if (lastSavedKeyRef.current === null || prev === lastSavedKeyRef.current) {
+        return savedAaKey;
+      }
+      return prev;
+    });
+    lastSavedKeyRef.current = savedAaKey;
+  }, [savedAaKey]);
 
   const muted = { color: colors.foregroundMuted, fontSize: 12.5, lineHeight: 18 };
 
@@ -53,29 +62,47 @@ export function QuotaAdvisorSettings({ theme }: PluginSurfaceProps) {
 
   const dirty = apiKeyDraft.trim() !== settings.values.aaApiKey;
 
-  const handleSaveKey = async () => {
+  const handleSaveKey = async (): Promise<boolean> => {
     setSavedNotice(null);
-    const ok = await settings.save(
-      { ...settings.values, aaApiKey: apiKeyDraft.trim() },
-      settings.revision
-    );
-    if (ok) {
-      setSavedNotice(apiKeyDraft.trim() ? "API key saved locally on this host." : "API key cleared.");
+    try {
+      const trimmed = apiKeyDraft.trim();
+      const ok = await settings.save(
+        { ...settings.values, aaApiKey: trimmed },
+        settings.revision
+      );
+      if (ok) {
+        lastSavedKeyRef.current = trimmed;
+        setSavedNotice(trimmed ? "API key saved locally on this host." : "API key cleared.");
+      }
+      return ok;
+    } catch {
+      return false;
     }
   };
 
   const handleToggleRecalibrate = (recalibrateOnSync: boolean) => {
-    void settings.save({ ...settings.values, recalibrateOnSync }, settings.revision);
+    void settings.save({ ...settings.values, recalibrateOnSync }, settings.revision).catch(() => {});
   };
 
   const handleSyncNow = async () => {
-    if (syncing) return;
-    if (dirty) {
-      await handleSaveKey();
-    }
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     setSyncResult(null);
     try {
+      if (dirty) {
+        const saved = await handleSaveKey();
+        if (!saved) {
+          setSyncResult({
+            ok: false,
+            matched: 0,
+            total: 0,
+            updatedAt: "-",
+            message: "Could not save API key before syncing. Please try saving again.",
+          });
+          return;
+        }
+      }
       const res = await runSyncAa({ recalibrate: settings.values.recalibrateOnSync });
       setSyncResult(res);
     } catch (err) {
@@ -87,6 +114,7 @@ export function QuotaAdvisorSettings({ theme }: PluginSurfaceProps) {
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
+      syncingRef.current = false;
       setSyncing(false);
     }
   };

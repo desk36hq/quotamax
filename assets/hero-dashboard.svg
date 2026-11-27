@@ -1,0 +1,253 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 710" width="1120" height="710" role="img" aria-label="Paseo Quota Advisor Dashboard Mockup">
+  <defs>
+    <radialGradient id="bgGlow" cx="15%" cy="10%" r="85%">
+      <stop offset="0%" stop-color="#172824"/>
+      <stop offset="55%" stop-color="#0d1211"/>
+      <stop offset="100%" stop-color="#090d0c"/>
+    </radialGradient>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.24"/>
+      <stop offset="100%" stop-color="#10b981" stop-opacity="0.24"/>
+    </linearGradient>
+    <clipPath id="splitClip">
+      <rect x="606" y="214" width="466" height="7" rx="3.5"/>
+    </clipPath>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .mono { font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; }
+    </style>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1120" height="710" rx="18" fill="url(#bgGlow)"/>
+  <rect x="0.5" y="0.5" width="1119" height="709" rx="17.5" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+
+  <!-- Header -->
+  <g>
+    <rect x="32" y="26" width="36" height="36" rx="10" fill="url(#iconGrad)" stroke="#60a5fa" stroke-opacity="0.4"/>
+    <path d="M50 48 L55 43 M40.5 52 A10.5 10.5 0 1 1 59.5 52" fill="none" stroke="#60a5fa" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="80" y="42" class="sans" font-size="18" font-weight="700" fill="#f3f8f7">Quota Advisor</text>
+    <text x="80" y="59" class="sans" font-size="11.5" fill="#879b96">4 active pools · updated just now · Paseo Explorer Panel</text>
+
+    <!-- Header Pills -->
+    <rect x="794" y="30" width="102" height="28" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.09"/>
+    <circle cx="810" cy="44" r="3.5" fill="#34d399"/>
+    <text x="821" y="48" class="sans" font-size="11.5" font-weight="600" fill="#b4c5c1">Live stream</text>
+
+    <rect x="904" y="30" width="84" height="28" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.09"/>
+    <text x="946" y="48" text-anchor="middle" class="sans" font-size="11.5" font-weight="600" fill="#b4c5c1">↻ Refresh</text>
+
+    <rect x="996" y="30" width="92" height="28" rx="8" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.09"/>
+    <text x="1042" y="48" text-anchor="middle" class="sans" font-size="11.5" font-weight="600" fill="#b4c5c1">⚙ Settings</text>
+  </g>
+
+  <!-- ==================== LEFT COLUMN ==================== -->
+
+  <!-- Card 1: Recommended Models -->
+  <g>
+    <rect x="32" y="84" width="542" height="292" rx="14" fill="#131a18" stroke="#ffffff" stroke-opacity="0.08"/>
+    <text x="48" y="111" class="sans" font-size="13.5" font-weight="700" fill="#f0f6f4">Recommended Models</text>
+
+    <!-- Task Tier Segmented Control -->
+    <rect x="330" y="94" width="228" height="26" rx="8" fill="#0d1211" stroke="#ffffff" stroke-opacity="0.08"/>
+    <text x="357" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="500" fill="#829590">Quick</text>
+    <text x="413" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="500" fill="#829590">Standard</text>
+    <rect x="448" y="96.5" width="46" height="21" rx="6" fill="#1f2b28"/>
+    <text x="471" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="700" fill="#f3f8f7">Hard</text>
+    <text x="526" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="500" fill="#829590">Frontier</text>
+
+    <!-- Row 1 (Top Pick) -->
+    <rect x="48" y="132" width="510" height="58" rx="10" fill="#182320" stroke="#3b82f6" stroke-opacity="0.7"/>
+    <text x="62" y="153" class="sans" font-size="13" font-weight="700" fill="#f3f8f7">1. Claude Opus 5.5</text>
+    <rect x="196" y="139" width="42" height="18" rx="5" fill="#131a18" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="217" y="152" text-anchor="middle" class="sans" font-size="10" font-weight="600" fill="#9cb0ab">xhigh</text>
+    <text x="62" y="174" class="mono" font-size="11" fill="#849792">claude</text>
+    <text x="110" y="174" class="sans" font-size="11" fill="#849792">· IQ 97 · Eff 52 · </text>
+    <text x="196" y="174" class="sans" font-size="11" font-weight="700" fill="#fbbf24">HAMMER · 2.4x</text>
+    <text x="476" y="165" text-anchor="end" class="mono" font-size="12.5" font-weight="700" fill="#60a5fa">124.8</text>
+    <rect x="488" y="147" width="58" height="28" rx="7" fill="#3b82f6"/>
+    <text x="517" y="165" text-anchor="middle" class="sans" font-size="11.5" font-weight="600" fill="#ffffff">Apply</text>
+
+    <!-- Row 2 -->
+    <rect x="48" y="198" width="510" height="58" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="62" y="219" class="sans" font-size="13" font-weight="700" fill="#f3f8f7">2. GPT-6.2-Sol</text>
+    <rect x="166" y="205" width="36" height="18" rx="5" fill="#131a18" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="184" y="218" text-anchor="middle" class="sans" font-size="10" font-weight="600" fill="#9cb0ab">high</text>
+    <text x="62" y="240" class="mono" font-size="11" fill="#849792">codex</text>
+    <text x="104" y="240" class="sans" font-size="11" fill="#849792">· IQ 91 · Eff 90 · </text>
+    <text x="190" y="240" class="sans" font-size="11" font-weight="700" fill="#60a5fa">PUSH · 1.5x</text>
+    <text x="476" y="231" text-anchor="end" class="mono" font-size="12.5" font-weight="700" fill="#849792">107.4</text>
+    <rect x="488" y="213" width="58" height="28" rx="7" fill="#1a2321" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="517" y="231" text-anchor="middle" class="sans" font-size="11.5" font-weight="600" fill="#e6eeec">Apply</text>
+
+    <!-- Row 3 -->
+    <rect x="48" y="264" width="510" height="58" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="62" y="285" class="sans" font-size="13" font-weight="700" fill="#f3f8f7">3. Gemini 4 Neon</text>
+    <rect x="184" y="271" width="50" height="18" rx="5" fill="#131a18" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="209" y="284" text-anchor="middle" class="sans" font-size="10" font-weight="600" fill="#9cb0ab">medium</text>
+    <text x="62" y="306" class="mono" font-size="11" fill="#849792">antigravity</text>
+    <text x="142" y="306" class="sans" font-size="11" fill="#849792">· IQ 96 · Eff 64 · </text>
+    <text x="228" y="306" class="sans" font-size="11" font-weight="700" fill="#34d399">BALANCED · 1.0x</text>
+    <text x="476" y="297" text-anchor="end" class="mono" font-size="12.5" font-weight="700" fill="#849792">89.2</text>
+    <rect x="488" y="279" width="58" height="28" rx="7" fill="#1a2321" stroke="#ffffff" stroke-opacity="0.12"/>
+    <text x="517" y="297" text-anchor="middle" class="sans" font-size="11.5" font-weight="600" fill="#e6eeec">Apply</text>
+
+    <!-- Rationale -->
+    <text x="48" y="344" class="sans" font-size="11.5" fill="#8ea19c">
+      <tspan font-weight="700" fill="#e6eeec">Why #1: </tspan>68% left with 18.4h to reset (2.4x ratio — use it or lose it).
+    </text>
+    <text x="48" y="361" class="sans" font-size="11.5" fill="#8ea19c">Latest Opus flagship; exceptional coding and multi-step debugging.</text>
+  </g>
+
+  <!-- Card 2: Burn Pace & Resets -->
+  <g>
+    <rect x="32" y="392" width="542" height="292" rx="14" fill="#131a18" stroke="#ffffff" stroke-opacity="0.08"/>
+    <text x="48" y="418" class="sans" font-size="13.5" font-weight="700" fill="#f0f6f4">Burn Pace &amp; Resets</text>
+    <text x="558" y="418" text-anchor="end" class="sans" font-size="11" fill="#7e918d">Ratio &gt; 1x = surplus · 15m burn ETA</text>
+
+    <!-- Pool 1: Claude -->
+    <rect x="48" y="432" width="510" height="114" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="62" y="453" class="sans" font-size="12.5" font-weight="700" fill="#eef5f3">Claude <tspan font-size="11" font-weight="400" fill="#7c908b">Max</tspan></text>
+    <rect x="444" y="439" width="102" height="20" rx="10" fill="#f59e0b" fill-opacity="0.16" stroke="#f59e0b" stroke-opacity="0.42"/>
+    <text x="495" y="453" text-anchor="middle" class="sans" font-size="10" font-weight="700" fill="#fbbf24">HAMMER · 2.4x</text>
+
+    <text x="62" y="476" class="sans" font-size="11" fill="#849792">Weekly</text>
+    <rect x="114" y="469" width="302" height="6" rx="3" fill="#1f2a27"/>
+    <rect x="114" y="469" width="97" height="6" rx="3" fill="#f59e0b"/>
+    <text x="546" y="476" text-anchor="end" class="mono" font-size="11" fill="#8fa19d">32% used · 18.4h</text>
+
+    <text x="62" y="497" class="sans" font-size="11" fill="#849792">5-hour</text>
+    <rect x="114" y="490" width="302" height="6" rx="3" fill="#1f2a27"/>
+    <rect x="114" y="490" width="124" height="6" rx="3" fill="#3b82f6"/>
+    <text x="546" y="497" text-anchor="end" class="mono" font-size="11" fill="#8fa19d">41% used · 2.8h</text>
+
+    <line x1="62" y1="511" x2="546" y2="511" stroke="#ffffff" stroke-opacity="0.06"/>
+    <text x="62" y="531" class="sans" font-size="11" fill="#849792">15m burn (0.48%/m) · 7d est. $24.60</text>
+    <rect x="442" y="517" width="104" height="20" rx="6" fill="#f59e0b" fill-opacity="0.14"/>
+    <text x="494" y="531" text-anchor="middle" class="sans" font-size="10.5" font-weight="700" fill="#fbbf24">5h limit in 2.0h</text>
+
+    <!-- Pool 2: Codex -->
+    <rect x="48" y="556" width="510" height="114" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="62" y="577" class="sans" font-size="12.5" font-weight="700" fill="#eef5f3">Codex <tspan font-size="11" font-weight="400" fill="#7c908b">Plus</tspan></text>
+    <rect x="462" y="563" width="84" height="20" rx="10" fill="#3b82f6" fill-opacity="0.16" stroke="#3b82f6" stroke-opacity="0.4"/>
+    <text x="504" y="577" text-anchor="middle" class="sans" font-size="10" font-weight="700" fill="#60a5fa">PUSH · 1.5x</text>
+
+    <text x="62" y="600" class="sans" font-size="11" fill="#849792">Weekly</text>
+    <rect x="114" y="593" width="302" height="6" rx="3" fill="#1f2a27"/>
+    <rect x="114" y="593" width="85" height="6" rx="3" fill="#3b82f6"/>
+    <text x="546" y="600" text-anchor="end" class="mono" font-size="11" fill="#8fa19d">28% used · 3d 6h</text>
+
+    <text x="62" y="621" class="sans" font-size="11" fill="#849792">5-hour</text>
+    <rect x="114" y="614" width="302" height="6" rx="3" fill="#1f2a27"/>
+    <rect x="114" y="614" width="42" height="6" rx="3" fill="#3b82f6"/>
+    <text x="546" y="621" text-anchor="end" class="mono" font-size="11" fill="#8fa19d">14% used · 4.1h</text>
+
+    <line x1="62" y1="635" x2="546" y2="635" stroke="#ffffff" stroke-opacity="0.06"/>
+    <text x="62" y="655" class="sans" font-size="11" fill="#849792">15m burn · 7d est. $11.40</text>
+    <text x="546" y="655" text-anchor="end" class="sans" font-size="11" fill="#748782">Idle</text>
+  </g>
+
+  <!-- ==================== RIGHT COLUMN ==================== -->
+
+  <!-- Card 3: API-Equivalent Cost Estimates -->
+  <g>
+    <rect x="590" y="84" width="498" height="600" rx="14" fill="#131a18" stroke="#ffffff" stroke-opacity="0.08"/>
+    <text x="606" y="111" class="sans" font-size="13.5" font-weight="700" fill="#f0f6f4">API-Equivalent Cost</text>
+
+    <!-- Window Switcher -->
+    <rect x="960" y="94" width="112" height="26" rx="8" fill="#0d1211" stroke="#ffffff" stroke-opacity="0.08"/>
+    <text x="980" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="500" fill="#829590">24h</text>
+    <rect x="1000" y="96.5" width="32" height="21" rx="6" fill="#1f2b28"/>
+    <text x="1016" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="700" fill="#f3f8f7">7d</text>
+    <text x="1052" y="111" text-anchor="middle" class="sans" font-size="11" font-weight="500" fill="#829590">30d</text>
+
+    <!-- KPI Row -->
+    <rect x="606" y="132" width="150" height="68" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="618" y="150" class="sans" font-size="10.5" fill="#829590">Est. Value</text>
+    <text x="618" y="173" class="mono" font-size="18" font-weight="700" fill="#f3f8f7">$64.80</text>
+    <text x="618" y="190" class="sans" font-size="10.5" fill="#7c908b">1,420 turns</text>
+
+    <rect x="764" y="132" width="150" height="68" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="776" y="150" class="sans" font-size="10.5" fill="#829590">Cache Saved</text>
+    <text x="776" y="173" class="mono" font-size="18" font-weight="700" fill="#34d399">$241.30</text>
+    <text x="776" y="190" class="sans" font-size="10.5" fill="#7c908b">94% cache hit</text>
+
+    <rect x="922" y="132" width="150" height="68" rx="10" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+    <text x="934" y="150" class="sans" font-size="10.5" fill="#829590">Tokens</text>
+    <text x="934" y="173" class="mono" font-size="18" font-weight="700" fill="#f3f8f7">184.2M</text>
+    <text x="934" y="190" class="sans" font-size="10.5" fill="#7c908b">2.6M out</text>
+
+    <!-- Category Split Bar -->
+    <rect x="606" y="214" width="466" height="7" rx="3.5" fill="#1f2a27"/>
+    <g clip-path="url(#splitClip)">
+      <rect x="606" y="214" width="65" height="7" fill="#3b82f6"/>
+      <rect x="671" y="214" width="168" height="7" fill="#34d399"/>
+      <rect x="839" y="214" width="112" height="7" fill="#f59e0b"/>
+      <rect x="951" y="214" width="121" height="7" fill="#a855f7"/>
+    </g>
+    <text x="606" y="237" class="sans" font-size="10.5" fill="#8fa19d">In $9.05</text>
+    <text x="674" y="237" class="sans" font-size="10.5" fill="#34d399">Cache Rd $23.30</text>
+    <text x="786" y="237" class="sans" font-size="10.5" fill="#fbbf24">Cache Wr $15.55</text>
+    <text x="900" y="237" class="sans" font-size="10.5" fill="#c084fc">Out $16.90</text>
+
+    <!-- By Pool Breakdown -->
+    <g>
+      <rect x="606" y="252" width="466" height="44" rx="9" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+      <text x="618" y="270" class="sans" font-size="11.5" font-weight="600" fill="#eef5f3">Claude</text>
+      <text x="996" y="270" text-anchor="end" class="mono" font-size="10.5" fill="#7f928d">38.4M · 96% hit</text>
+      <text x="1060" y="270" text-anchor="end" class="mono" font-size="12" font-weight="700" fill="#f3f8f7">$24.60</text>
+      <rect x="618" y="281" width="442" height="4" rx="2" fill="#1f2a27"/>
+      <rect x="618" y="281" width="168" height="4" rx="2" fill="#3b82f6"/>
+
+      <rect x="606" y="303" width="466" height="44" rx="9" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+      <text x="618" y="321" class="sans" font-size="11.5" font-weight="600" fill="#eef5f3">Antigravity (Gemini)</text>
+      <text x="996" y="321" text-anchor="end" class="mono" font-size="10.5" fill="#7f928d">22.1M · 87% hit</text>
+      <text x="1060" y="321" text-anchor="end" class="mono" font-size="12" font-weight="700" fill="#f3f8f7">$16.90</text>
+      <rect x="618" y="332" width="442" height="4" rx="2" fill="#1f2a27"/>
+      <rect x="618" y="332" width="115" height="4" rx="2" fill="#3b82f6"/>
+
+      <rect x="606" y="354" width="466" height="44" rx="9" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+      <text x="618" y="372" class="sans" font-size="11.5" font-weight="600" fill="#eef5f3">GLM Coding Plan</text>
+      <text x="996" y="372" text-anchor="end" class="mono" font-size="10.5" fill="#7f928d">64.2M · 95% hit</text>
+      <text x="1060" y="372" text-anchor="end" class="mono" font-size="12" font-weight="700" fill="#f3f8f7">$11.90</text>
+      <rect x="618" y="383" width="442" height="4" rx="2" fill="#1f2a27"/>
+      <rect x="618" y="383" width="81" height="4" rx="2" fill="#3b82f6"/>
+
+      <rect x="606" y="405" width="466" height="44" rx="9" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.07"/>
+      <text x="618" y="423" class="sans" font-size="11.5" font-weight="600" fill="#eef5f3">Codex</text>
+      <text x="996" y="423" text-anchor="end" class="mono" font-size="10.5" fill="#7f928d">59.5M · 94% hit</text>
+      <text x="1060" y="423" text-anchor="end" class="mono" font-size="12" font-weight="700" fill="#f3f8f7">$11.40</text>
+      <rect x="618" y="434" width="442" height="4" rx="2" fill="#1f2a27"/>
+      <rect x="618" y="434" width="77" height="4" rx="2" fill="#3b82f6"/>
+    </g>
+
+    <!-- Top Models -->
+    <text x="606" y="470" class="sans" font-size="11.5" font-weight="600" fill="#60a5fa">Hide model breakdown</text>
+
+    <g>
+      <rect x="606" y="480" width="466" height="36" rx="8" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.06"/>
+      <text x="618" y="495" class="sans" font-size="11" font-weight="600" fill="#e6eeec">claude-opus-5-5</text>
+      <text x="618" y="509" class="sans" font-size="10" fill="#7b8e89">claude · 34.1M · 218 turns</text>
+      <text x="1060" y="502" text-anchor="end" class="mono" font-size="11.5" font-weight="700" fill="#eef5f3">$22.40</text>
+
+      <rect x="606" y="522" width="466" height="36" rx="8" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.06"/>
+      <text x="618" y="537" class="sans" font-size="11" font-weight="600" fill="#e6eeec">gemini-4-neon</text>
+      <text x="618" y="551" class="sans" font-size="10" fill="#7b8e89">antigravity · 18.6M · 154 turns</text>
+      <text x="1060" y="544" text-anchor="end" class="mono" font-size="11.5" font-weight="700" fill="#eef5f3">$14.80</text>
+
+      <rect x="606" y="564" width="466" height="36" rx="8" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.06"/>
+      <text x="618" y="579" class="sans" font-size="11" font-weight="600" fill="#e6eeec">zai-coding-cn/glm-5.4</text>
+      <text x="618" y="593" class="sans" font-size="10" fill="#7b8e89">pi · 61.8M · 442 turns</text>
+      <text x="1060" y="586" text-anchor="end" class="mono" font-size="11.5" font-weight="700" fill="#eef5f3">$11.65</text>
+
+      <rect x="606" y="606" width="466" height="36" rx="8" fill="#0e1413" stroke="#ffffff" stroke-opacity="0.06"/>
+      <text x="618" y="621" class="sans" font-size="11" font-weight="600" fill="#e6eeec">gpt-6.2-sol</text>
+      <text x="618" y="635" class="sans" font-size="10" fill="#7b8e89">codex · 21.4M · 168 turns</text>
+      <text x="1060" y="628" text-anchor="end" class="mono" font-size="11.5" font-weight="700" fill="#eef5f3">$9.75</text>
+    </g>
+
+    <!-- Footnote -->
+    <text x="606" y="660" class="sans" font-size="10.5" fill="#758883">API-equivalent rates via LiteLLM (6,373 models, OpenRouter fallback) —</text>
+    <text x="606" y="674" class="sans" font-size="10.5" fill="#758883">reflects equivalent API value, not subscription spend.</text>
+  </g>
+</svg>

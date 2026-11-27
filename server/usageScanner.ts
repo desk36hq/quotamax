@@ -14,8 +14,20 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 import type { UsageSpeed, UsageTokenTotals } from "./usagePricing";
+
+type DatabaseSyncCtor = typeof NodeDatabaseSync;
+let sqliteCtorPromise: Promise<DatabaseSyncCtor | null> | null = null;
+
+async function loadDatabaseSync(): Promise<DatabaseSyncCtor | null> {
+  if (!sqliteCtorPromise) {
+    sqliteCtorPromise = import("node:sqlite")
+      .then((mod) => mod.DatabaseSync)
+      .catch(() => null);
+  }
+  return sqliteCtorPromise;
+}
 
 export type UsageProvider = "claude" | "codex" | "antigravity" | "pi";
 
@@ -58,7 +70,7 @@ function parseTimestampMs(value: unknown): number | null {
 
 function expandHome(raw: string): string {
   if (raw === "~") return os.homedir();
-  if (raw.startsWith("~/")) return path.join(os.homedir(), raw.slice(2));
+  if (raw.startsWith("~/") || raw.startsWith("~\\")) return path.join(os.homedir(), raw.slice(2));
   return raw;
 }
 
@@ -842,7 +854,11 @@ interface AgDbCacheEntry {
   records: UsageRecord[];
 }
 
-function readAntigravityDb(dbPath: string, fallbackTimestamp: number): UsageRecord[] {
+function readAntigravityDb(
+  DatabaseSync: DatabaseSyncCtor,
+  dbPath: string,
+  fallbackTimestamp: number
+): UsageRecord[] {
   const db = new DatabaseSync(dbPath, { readOnly: true });
   try {
     db.exec("PRAGMA busy_timeout = 100");
@@ -1105,35 +1121,34 @@ export class LocalUsageScanner {
 
   async scanSince(sinceMs: number): Promise<UsageRecord[]> {
     const [claude, codex, pi, agy] = await Promise.all([
-      this.scanClaude(sinceMs),
-      this.scanCodex(sinceMs),
-      this.scanPi(sinceMs),
+      this.scanJsonlRoot(this.roots.claudeProjectsDir, sinceMs, () => parseClaudeLine),
+      this.scanJsonlRoot(this.roots.codexSessionsDir, sinceMs, () => {
+        const state = initialCodexScanState();
+        return (line) => parseCodexLine(line, state);
+      }),
+      this.scanJsonlRoot(this.roots.piSessionsDir, sinceMs, () => {
+        const state: PiScanState = { sessionId: "" };
+        return (line) => parsePiLine(line, state);
+      }),
       this.scanAntigravity(sinceMs),
     ]);
     return [...claude, ...codex, ...pi, ...agy];
   }
 
-  private async scanClaude(sinceMs: number): Promise<UsageRecord[]> {
-    if (!this.roots.claudeProjectsDir) return [];
-    const files = await walkFiles(this.roots.claudeProjectsDir, ".jsonl", sinceMs);
-    const out: UsageRecord[] = [];
-    for (const f of files) {
-      const fp = `${f.size}:${f.mtimeMs}`;
-      const cached = this.jsonlCache.get(f.filePath);
-      if (cached && cached.fingerprint === fp) {
-        for (const r of cached.records) if (r.timestampMs >= sinceMs) out.push(r);
-        continue;
+  private async scanJsonlRoot(
+    root: string | undefined,
+    sinceMs: number,
+    makeParser: () => (line: string) => readonly UsageRecord[]
+  ): Promise<UsageRecord[]> {
+    if (!root) return [];
+    const files = await walkFiles(root, ".jsonl", sinceMs);
+    const seen = new Set(files.map((f) => f.filePath));
+    const prefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+    for (const cachedPath of this.jsonlCache.keys()) {
+      if (cachedPath.startsWith(prefix) && !seen.has(cachedPath)) {
+        this.jsonlCache.delete(cachedPath);
       }
-      const records = await scanJsonlFile(f.filePath, parseClaudeLine);
-      this.jsonlCache.set(f.filePath, { fingerprint: fp, records });
-      for (const r of records) if (r.timestampMs >= sinceMs) out.push(r);
     }
-    return out;
-  }
-
-  private async scanCodex(sinceMs: number): Promise<UsageRecord[]> {
-    if (!this.roots.codexSessionsDir) return [];
-    const files = await walkFiles(this.roots.codexSessionsDir, ".jsonl", sinceMs);
     const out: UsageRecord[] = [];
     for (const f of files) {
       const fp = `${f.size}:${f.mtimeMs}`;
@@ -1142,27 +1157,7 @@ export class LocalUsageScanner {
         for (const r of cached.records) if (r.timestampMs >= sinceMs) out.push(r);
         continue;
       }
-      const state = initialCodexScanState();
-      const records = await scanJsonlFile(f.filePath, (line) => parseCodexLine(line, state));
-      this.jsonlCache.set(f.filePath, { fingerprint: fp, records });
-      for (const r of records) if (r.timestampMs >= sinceMs) out.push(r);
-    }
-    return out;
-  }
-
-  private async scanPi(sinceMs: number): Promise<UsageRecord[]> {
-    if (!this.roots.piSessionsDir) return [];
-    const files = await walkFiles(this.roots.piSessionsDir, ".jsonl", sinceMs);
-    const out: UsageRecord[] = [];
-    for (const f of files) {
-      const fp = `${f.size}:${f.mtimeMs}`;
-      const cached = this.jsonlCache.get(f.filePath);
-      if (cached && cached.fingerprint === fp) {
-        for (const r of cached.records) if (r.timestampMs >= sinceMs) out.push(r);
-        continue;
-      }
-      const state: PiScanState = { sessionId: "" };
-      const records = await scanJsonlFile(f.filePath, (line) => parsePiLine(line, state));
+      const records = await scanJsonlFile(f.filePath, makeParser());
       this.jsonlCache.set(f.filePath, { fingerprint: fp, records });
       for (const r of records) if (r.timestampMs >= sinceMs) out.push(r);
     }
@@ -1171,7 +1166,13 @@ export class LocalUsageScanner {
 
   private async scanAntigravity(sinceMs: number): Promise<UsageRecord[]> {
     if (!this.roots.antigravityConversationsDir) return [];
+    const DatabaseSync = await loadDatabaseSync();
+    if (!DatabaseSync) return [];
     const files = await walkFiles(this.roots.antigravityConversationsDir, ".db", sinceMs);
+    const seen = new Set(files.map((f) => f.filePath));
+    for (const cachedPath of this.agyCache.keys()) {
+      if (!seen.has(cachedPath)) this.agyCache.delete(cachedPath);
+    }
     const out: UsageRecord[] = [];
     for (const f of files) {
       let walPart = "-";
@@ -1188,7 +1189,7 @@ export class LocalUsageScanner {
         continue;
       }
       try {
-        const records = readAntigravityDb(f.filePath, f.mtimeMs);
+        const records = readAntigravityDb(DatabaseSync, f.filePath, f.mtimeMs);
         this.agyCache.set(f.filePath, { fingerprint: fp, records });
         for (const r of records) if (r.timestampMs >= sinceMs) out.push(r);
       } catch {

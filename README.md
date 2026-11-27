@@ -2,6 +2,12 @@
 
 A [Paseo](https://paseo.sh) plugin for **token-maxxing** across multiple AI coding subscriptions — combining live subscription quota pacing, model recommendations, and API-equivalent cost estimates.
 
+![Quota Advisor Dashboard](assets/hero-dashboard.svg)
+
+## How Quota Pacing Works
+
+![Quota Pacing Modes](assets/burn-modes.svg)
+
 ## Features
 
 - **Model & Thinking Recommendations**: Scores models across your active pools (`Claude`, `Codex`, `Antigravity`, `GLM`, `Alibaba`) for `Quick`, `Standard`, `Hard`, and `Frontier` tasks with **1-click Apply** to the focused composer.
@@ -15,7 +21,7 @@ A [Paseo](https://paseo.sh) plugin for **token-maxxing** across multiple AI codi
 
 ## Install
 
-Requires Paseo `>=0.17.3` and Node `>=22.5` (for `node:sqlite`).
+Requires Paseo `>=0.17.3` (Node `>=22.13` recommended for Antigravity SQLite cost scanning; other providers work on older Node versions).
 
 ```bash
 paseo plugin add https://github.com/adamrbell/paseo-quota-advisor.git

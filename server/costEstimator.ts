@@ -36,6 +36,8 @@ const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const OPENROUTER_RATES_URL = "https://openrouter.ai/api/v1/models";
 const RATES_TTL_MS = 24 * 60 * 60 * 1000;
+const RATES_FAILURE_BACKOFF_MS = 10 * 60 * 1000;
+const MAX_RATES_RESPONSE_BYTES = 15 * 1024 * 1024;
 const SUMMARY_CACHE_TTL_MS = 60_000;
 
 const WINDOW_MS: Record<CostWindow, number> = {
@@ -158,15 +160,10 @@ export function mapRecordToPool(record: Pick<UsageRecord, "provider" | "model">)
     return record.model.toLowerCase().startsWith("gemini") ? "antigravity:gemini" : "antigravity:3p";
   }
   const lower = record.model.toLowerCase();
-  if (lower.startsWith("zai") || lower.includes("/glm-") || lower.startsWith("glm-")) {
+  if (lower.startsWith("zai") || lower.startsWith("glm-")) {
     return "glm";
   }
-  if (
-    lower.startsWith("alibaba") ||
-    lower.startsWith("dashscope") ||
-    lower.includes("qwen") ||
-    lower.includes("deepseek")
-  ) {
+  if (lower.startsWith("alibaba") || lower.startsWith("dashscope") || lower.startsWith("qwen")) {
     return "alibaba";
   }
   return "pi";
@@ -429,11 +426,13 @@ export class CostEstimatorService {
   private rateTable: RateTable | null = null;
   private ratesSource: CostRatesSource = "fallback";
   private ratesFetchedAtMs: number | null = null;
+  private lastRateFetchFailureMs: number | null = null;
   private ratesInflight: Promise<RateTable> | null = null;
   private readonly summaryCache = new Map<
     CostWindow,
     { cachedAtMs: number; summary: CostEstimateSummary }
   >();
+  private readonly summaryInflight = new Map<CostWindow, Promise<CostEstimateSummary>>();
 
   constructor(options?: { roots?: UsageScanRoots; ratesCachePath?: string }) {
     this.scanner = new LocalUsageScanner(options?.roots);
@@ -447,6 +446,20 @@ export class CostEstimatorService {
       return cached.summary;
     }
 
+    const existing = this.summaryInflight.get(window);
+    if (existing && !refresh) return existing;
+
+    const run = this.computeSummary(window, refresh).finally(() => {
+      if (this.summaryInflight.get(window) === run) {
+        this.summaryInflight.delete(window);
+      }
+    });
+    this.summaryInflight.set(window, run);
+    return run;
+  }
+
+  private async computeSummary(window: CostWindow, refresh: boolean): Promise<CostEstimateSummary> {
+    const nowMs = Date.now();
     const [rates, records] = await Promise.all([
       this.loadRates(refresh),
       this.scanner.scanSince(nowMs - WINDOW_MS[window]),
@@ -474,6 +487,13 @@ export class CostEstimatorService {
     ) {
       return this.rateTable;
     }
+    if (
+      !forceRefresh &&
+      this.lastRateFetchFailureMs !== null &&
+      nowMs - this.lastRateFetchFailureMs < RATES_FAILURE_BACKOFF_MS
+    ) {
+      return this.rateTable ?? FALLBACK_RATE_TABLE;
+    }
     if (this.ratesInflight) return this.ratesInflight;
 
     this.ratesInflight = this.fetchOrReadRates(forceRefresh).finally(() => {
@@ -492,7 +512,13 @@ export class CostEstimatorService {
           signal: controller.signal,
         });
         if (!res.ok) return null;
-        return (await res.json()) as unknown;
+        const contentLength = Number(res.headers.get("content-length") ?? "0");
+        if (Number.isFinite(contentLength) && contentLength > MAX_RATES_RESPONSE_BYTES) {
+          return null;
+        }
+        const text = await res.text();
+        if (text.length > MAX_RATES_RESPONSE_BYTES) return null;
+        return JSON.parse(text) as unknown;
       } finally {
         clearTimeout(timeout);
       }
@@ -508,11 +534,13 @@ export class CostEstimatorService {
   ): Promise<void> {
     try {
       fs.mkdirSync(path.dirname(this.ratesCachePath), { recursive: true });
+      const tmpPath = `${this.ratesCachePath}.${process.pid}.${Date.now()}.tmp`;
       await fsp.writeFile(
-        this.ratesCachePath,
+        tmpPath,
         JSON.stringify({ fetchedAtMs, source, document }),
         "utf8"
       );
+      await fsp.rename(tmpPath, this.ratesCachePath);
     } catch {
       // Best-effort cache write
     }
@@ -565,6 +593,7 @@ export class CostEstimatorService {
         this.rateTable = table;
         this.ratesSource = "litellm";
         this.ratesFetchedAtMs = nowMs;
+        this.lastRateFetchFailureMs = null;
         await this.writeRatesCache(nowMs, "litellm", litellmDoc);
         return table;
       }
@@ -578,18 +607,21 @@ export class CostEstimatorService {
         this.rateTable = table;
         this.ratesSource = "openrouter";
         this.ratesFetchedAtMs = nowMs;
+        this.lastRateFetchFailureMs = null;
         await this.writeRatesCache(nowMs, "openrouter", openRouterDoc);
         return table;
       }
     }
 
-    // 4. Stale disk cache, else built-in fallback rates
+    // 4. Both remote fetches failed: record backoff so offline calls don't re-hang
+    this.lastRateFetchFailureMs = nowMs;
     if (staleTable) {
       this.rateTable = staleTable;
       this.ratesSource = staleSource;
       this.ratesFetchedAtMs = staleFetchedAt;
       return staleTable;
     }
+    this.rateTable = FALLBACK_RATE_TABLE;
     this.ratesSource = "fallback";
     return FALLBACK_RATE_TABLE;
   }

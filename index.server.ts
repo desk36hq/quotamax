@@ -53,14 +53,19 @@ export default function contribute(server: PluginServerContext) {
   });
 
   server.handle(snapshotSubscription, (_input, ctx) => {
+    if (ctx.signal.aborted) return;
     const unsubscribe = service.subscribe((snapshot) => {
       if (!ctx.signal.aborted) {
         void ctx.push(snapshot).catch(() => {});
       }
     });
-    ctx.signal.addEventListener("abort", () => {
-      unsubscribe();
-    });
+    ctx.signal.addEventListener(
+      "abort",
+      () => {
+        unsubscribe();
+      },
+      { once: true }
+    );
   });
 
   return () => {

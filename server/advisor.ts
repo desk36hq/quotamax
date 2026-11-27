@@ -1,8 +1,8 @@
-import { execFile } from "node:child_process";
+import { execCommand } from "@getpaseo/plugin/server";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import { z } from "zod";
 import bundledCatalog from "./default-models.json";
 import type {
   BurnMode,
@@ -14,18 +14,14 @@ import type {
   TaskTier,
   WindowStats,
 } from "../shared/contract";
+import type { advisorSettings } from "../shared/settings";
 
 const AA_ENDPOINTS = [
   "https://artificialanalysis.ai/api/v2/data/llms/models",
   "https://artificialanalysis.ai/api/v2/language/models",
 ];
 
-interface AdvisorSettingsValues {
-  aaApiKey: string;
-  recalibrateOnSync: boolean;
-}
-
-const execFileAsync = promisify(execFile);
+type AdvisorSettingsValues = z.infer<typeof advisorSettings.schema>;
 
 const POLL_INTERVAL_MS = 90_000;
 const HISTORY_RETENTION_MS = 65 * 60_000;
@@ -33,44 +29,51 @@ const PRIMARY_BURN_WINDOW_MS = 15 * 60_000;
 const FALLBACK_BURN_WINDOW_MS = 30 * 60_000;
 const VALID_TASKS: readonly TaskTier[] = ["quick", "standard", "hard", "frontier"];
 
-interface CatalogPool {
-  label: string;
-  sourceId: string;
-  weeklyWindowId: string;
-  shortWindowId: string;
-  paseoProvider: string;
-}
+const CatalogPoolSchema = z.object({
+  label: z.string(),
+  sourceId: z.string(),
+  weeklyWindowId: z.string(),
+  shortWindowId: z.string(),
+  paseoProvider: z.string(),
+});
 
-interface CatalogModel {
-  id: string;
-  provider: string;
-  pool: string;
-  label: string;
-  tier: string;
-  intelligence: number;
-  coding: number;
-  efficiency: number;
-  quotaCost: number;
-  bestFor: string[];
-  thinking?: Record<string, string | null>;
-  aaMatch?: string[];
-  aaMetrics?: {
-    name: string;
-    slug: string | null;
-    intelligenceIndex: number | null;
-    codingIndex: number | null;
-    blendedPricePer1M: number | null;
-    medianOutputTps: number | null;
-    syncedAt: string;
-  };
-  notes: string;
-}
+const CatalogModelSchema = z.object({
+  id: z.string(),
+  provider: z.string(),
+  pool: z.string(),
+  label: z.string(),
+  tier: z.string(),
+  intelligence: z.number(),
+  coding: z.number(),
+  efficiency: z.number(),
+  quotaCost: z.number(),
+  bestFor: z.array(z.string()),
+  thinking: z.record(z.string(), z.string().nullable()).optional(),
+  aaMatch: z.array(z.string()).optional(),
+  aaMetrics: z
+    .object({
+      name: z.string(),
+      slug: z.string().nullable(),
+      intelligenceIndex: z.number().nullable(),
+      codingIndex: z.number().nullable(),
+      blendedPricePer1M: z.number().nullable(),
+      medianOutputTps: z.number().nullable(),
+      syncedAt: z.string(),
+    })
+    .optional(),
+  notes: z.string(),
+});
 
-interface ModelCatalog {
-  updatedAt: string;
-  pools: Record<string, CatalogPool>;
-  models: CatalogModel[];
-}
+const ModelCatalogSchema = z
+  .object({
+    updatedAt: z.string(),
+    pools: z.record(z.string(), CatalogPoolSchema),
+    models: z.array(CatalogModelSchema),
+  })
+  .passthrough();
+
+type CatalogModel = z.infer<typeof CatalogModelSchema>;
+type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
 
 interface UsageWindowRaw {
   id: string;
@@ -148,14 +151,35 @@ function formatEtaMinutes(mins: number): string {
   return remH > 0 ? `${d}d ${remH}h` : `${d}d`;
 }
 
+function writeFileAtomically(filePath: string, content: string): void {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, content, "utf8");
+  fs.renameSync(tmpPath, filePath);
+}
+
+function tryReadValidatedCatalog(filePath: string): ModelCatalog | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = ModelCatalogSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadCatalog(): ModelCatalog {
-  if (fs.existsSync(SKILL_CATALOG_PATH)) {
-    return JSON.parse(fs.readFileSync(SKILL_CATALOG_PATH, "utf8")) as ModelCatalog;
-  }
-  if (fs.existsSync(PLUGIN_DATA_CATALOG_PATH)) {
-    return JSON.parse(fs.readFileSync(PLUGIN_DATA_CATALOG_PATH, "utf8")) as ModelCatalog;
-  }
-  return structuredClone(bundledCatalog) as unknown as ModelCatalog;
+  return (
+    tryReadValidatedCatalog(SKILL_CATALOG_PATH) ??
+    tryReadValidatedCatalog(PLUGIN_DATA_CATALOG_PATH) ??
+    (structuredClone(bundledCatalog) as unknown as ModelCatalog)
+  );
+}
+
+function resolveAaApiKey(settings: AdvisorSettingsValues): string {
+  return (settings.aaApiKey || process.env.ARTIFICIAL_ANALYSIS_API_KEY || "").trim();
 }
 
 function parseWindow(
@@ -164,11 +188,15 @@ function parseWindow(
   fallbackDurationSec: number
 ): WindowStats | null {
   if (!win) return null;
-  const usedPct = typeof win.usedPct === "number" ? win.usedPct : 100 - (win.remainingPct ?? 0);
-  const remainingPct = typeof win.remainingPct === "number" ? win.remainingPct : 100 - usedPct;
+  const hasUsed = typeof win.usedPct === "number" && Number.isFinite(win.usedPct);
+  const hasRem = typeof win.remainingPct === "number" && Number.isFinite(win.remainingPct);
+  if (!hasUsed && !hasRem) return null;
+  const usedPct = hasUsed ? win.usedPct! : 100 - win.remainingPct!;
+  const remainingPct = hasRem ? win.remainingPct! : 100 - usedPct;
   const durationSec = win.durationSeconds || fallbackDurationSec;
   const windowHours = durationSec / 3600;
-  const resetsAtMs = win.resetsAt ? Date.parse(win.resetsAt) : null;
+  const parsedReset = win.resetsAt ? Date.parse(win.resetsAt) : NaN;
+  const resetsAtMs = Number.isFinite(parsedReset) ? parsedReset : null;
   const remainingHours = resetsAtMs != null ? Math.max(0.05, (resetsAtMs - nowMs) / 3_600_000) : null;
   const timeRemainingFrac =
     remainingHours != null ? clamp(remainingHours / windowHours, 0.001, 1.0) : null;
@@ -419,6 +447,9 @@ export class QuotaAdvisorService {
   private readonly readSettings: () => Promise<AdvisorSettingsValues>;
   private latest: QuotaAdvisorSnapshot | null = null;
   private inflight: Promise<QuotaAdvisorSnapshot> | null = null;
+  private syncInflight: Promise<SyncAaResult> | null = null;
+  private pollSeq = 0;
+  private abortController = new AbortController();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(readSettings: () => Promise<AdvisorSettingsValues>) {
@@ -427,6 +458,7 @@ export class QuotaAdvisorService {
 
   start(): void {
     if (this.timer) return;
+    this.abortController = new AbortController();
     void this.poll(false).catch(() => {});
     this.timer = setInterval(() => {
       void this.poll(false).catch(() => {});
@@ -438,6 +470,7 @@ export class QuotaAdvisorService {
       clearInterval(this.timer);
       this.timer = null;
     }
+    this.abortController.abort();
     this.listeners.clear();
   }
 
@@ -465,8 +498,17 @@ export class QuotaAdvisorService {
   }
 
   async syncArtificialAnalysis(recalibrateOverride?: boolean): Promise<SyncAaResult> {
+    if (this.syncInflight) return this.syncInflight;
+    const run = this.runSyncArtificialAnalysis(recalibrateOverride).finally(() => {
+      if (this.syncInflight === run) this.syncInflight = null;
+    });
+    this.syncInflight = run;
+    return run;
+  }
+
+  private async runSyncArtificialAnalysis(recalibrateOverride?: boolean): Promise<SyncAaResult> {
     const settings = await this.readSettings();
-    const apiKey = (settings.aaApiKey || process.env.ARTIFICIAL_ANALYSIS_API_KEY || "").trim();
+    const apiKey = resolveAaApiKey(settings);
     const recalibrate = recalibrateOverride ?? settings.recalibrateOnSync;
     const catalog = loadCatalog();
 
@@ -497,18 +539,28 @@ export class QuotaAdvisorService {
 
     let rows: AaRow[] = [];
     let lastStatus = 0;
+    let lastErrorMessage = "";
     for (const url of AA_ENDPOINTS) {
-      const res = await fetch(url, {
-        headers: { "x-api-key": apiKey, Accept: "application/json" },
-      });
-      lastStatus = res.status;
-      if (res.ok) {
-        const json = (await res.json()) as AaRow[] | { data?: AaRow[]; models?: AaRow[] };
-        const list = Array.isArray(json) ? json : json.data || json.models || [];
-        if (list.length > 0) {
-          rows = list;
-          break;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const res = await fetch(url, {
+          headers: { "x-api-key": apiKey, Accept: "application/json" },
+          signal: controller.signal,
+        });
+        lastStatus = res.status;
+        if (res.ok) {
+          const json = (await res.json()) as AaRow[] | { data?: AaRow[]; models?: AaRow[] };
+          const list = Array.isArray(json) ? json : json.data || json.models || [];
+          if (list.length > 0) {
+            rows = list;
+            break;
+          }
         }
+      } catch (err) {
+        lastErrorMessage = err instanceof Error ? err.message : String(err);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
@@ -521,7 +573,7 @@ export class QuotaAdvisorService {
         message:
           lastStatus === 401 || lastStatus === 403
             ? `Artificial Analysis rejected the API key (HTTP ${lastStatus}). Check your key in Settings.`
-            : `Failed to fetch Artificial Analysis models (HTTP ${lastStatus || "network error"}).`,
+            : `Failed to fetch Artificial Analysis models (${lastStatus ? `HTTP ${lastStatus}` : lastErrorMessage || "network error"}).`,
       };
     }
 
@@ -534,10 +586,24 @@ export class QuotaAdvisorService {
 
     for (const m of catalog.models) {
       const needles = (m.aaMatch || [m.id, m.label]).map((s) => s.toLowerCase());
-      const hit = rows.find((row) => {
-        const hay = `${row.slug || ""} ${row.name || ""} ${row.id || ""}`.toLowerCase();
-        return needles.some((n) => hay.includes(n));
+      // Prefer exact slug/id/name match first, then tightest substring match
+      const exactHit = rows.find((row) => {
+        const fields = [row.slug, row.id, row.name]
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
+          .map((v) => v.toLowerCase());
+        return needles.some((n) => fields.includes(n));
       });
+      const hit =
+        exactHit ??
+        rows
+          .filter((row) => {
+            const hay = `${row.slug || ""} ${row.name || ""} ${row.id || ""}`.toLowerCase();
+            return needles.some((n) => hay.includes(n));
+          })
+          .sort(
+            (a, b) =>
+              `${a.slug || ""}${a.name || ""}`.length - `${b.slug || ""}${b.name || ""}`.length
+          )[0];
       if (!hit) continue;
       matched++;
       const intelIdx = hit.evaluations?.artificial_analysis_intelligence_index ?? null;
@@ -568,7 +634,7 @@ export class QuotaAdvisorService {
     }
 
     catalog.updatedAt = today;
-    fs.writeFileSync(resolveCatalogWritePath(), JSON.stringify(catalog, null, 2) + "\n", "utf8");
+    writeFileAtomically(resolveCatalogWritePath(), JSON.stringify(catalog, null, 2) + "\n");
     await this.poll(false);
 
     return {
@@ -605,6 +671,7 @@ export class QuotaAdvisorService {
   }
 
   private async computeSnapshot(refresh: boolean): Promise<QuotaAdvisorSnapshot> {
+    const seq = ++this.pollSeq;
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
 
@@ -612,10 +679,11 @@ export class QuotaAdvisorService {
       const catalog = loadCatalog();
       const cmdArgs = ["usage", "--json"];
       if (refresh) cmdArgs.push("--refresh");
-      const { stdout } = await execFileAsync("paseo", cmdArgs, {
+      const { stdout } = await execCommand("paseo", cmdArgs, {
         encoding: "utf8",
         maxBuffer: 10 * 1024 * 1024,
         timeout: 20_000,
+        signal: this.abortController.signal,
       });
       const reports = JSON.parse(stdout) as UsageReportEntry[];
 
@@ -757,7 +825,7 @@ export class QuotaAdvisorService {
       }
 
       const settings = await this.readSettings();
-      const hasAaKey = Boolean((settings.aaApiKey || process.env.ARTIFICIAL_ANALYSIS_API_KEY || "").trim());
+      const hasAaKey = Boolean(resolveAaApiKey(settings));
 
       const snapshot: QuotaAdvisorSnapshot = {
         generatedAt: nowIso,
@@ -769,15 +837,18 @@ export class QuotaAdvisorService {
         pools,
         recommendations,
       };
-      this.latest = snapshot;
-      for (const listener of this.listeners) {
-        listener(snapshot);
+      if (seq >= this.pollSeq) {
+        this.latest = snapshot;
+        for (const listener of this.listeners) {
+          listener(snapshot);
+        }
       }
       return snapshot;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      const msg = rawMsg.split(/\r?\n/)[0]?.slice(0, 200) || "Failed to read Paseo usage";
       const fallback: QuotaAdvisorSnapshot = this.latest
-        ? { ...this.latest, error: msg }
+        ? { ...this.latest, lastPolledAt: nowIso, error: msg }
         : {
             generatedAt: nowIso,
             lastPolledAt: nowIso,
@@ -788,6 +859,12 @@ export class QuotaAdvisorService {
             pools: [],
             recommendations: { quick: [], standard: [], hard: [], frontier: [] },
           };
+      if (seq >= this.pollSeq) {
+        this.latest = fallback;
+        for (const listener of this.listeners) {
+          listener(fallback);
+        }
+      }
       return fallback;
     }
   }

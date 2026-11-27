@@ -2,13 +2,14 @@
 // against stub CLIs that behave like the real ones: success JSON on stdout with
 // exit 0, the error envelope on stderr with the CLI's own exit code.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { toneFromUsedPct } from "@getpaseo/plugin/server/usage";
 import { discoverAlibaba, fetchAlibabaUsage } from "../server/alibabaUsage";
 
-const dir = "/tmp/qa-alibaba-stub";
-rmSync(dir, { recursive: true, force: true });
-mkdirSync(dir, { recursive: true });
+const dir = mkdtempSync(path.join(os.tmpdir(), "qa-alibaba-stub-"));
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 // Only `node` and the stubs are on PATH, so the real `bl` / `qwencloud` installed on
 // this machine cannot leak into a case that is meant to run without them.
 symlinkSync(process.execPath, `${dir}/node`);

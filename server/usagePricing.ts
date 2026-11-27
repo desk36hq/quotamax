@@ -107,7 +107,7 @@ export function createOverrideRateTable(
 type LiteLlmEntry = Readonly<Record<string, unknown>>;
 
 function finiteNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 // Missing cache rates fall back to input pricing, and a missing 1-hour write rate to the 5-minute one.

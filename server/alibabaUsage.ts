@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execCommand } from "@getpaseo/plugin/server";
 import { z } from "zod";
 import {
   toneFromUsedPct,
@@ -14,10 +14,9 @@ const CLI_TIMEOUT_MS = 20_000;
 export const alibabaInputSchema = z.object({ account: z.literal("default") }).strict();
 export type AlibabaUsageInput = z.infer<typeof alibabaInputSchema>;
 
-// The plan API key (sk-sp-...) cannot read quota for this account: the console RPC
-// answers ConsoleNeedLogin on every host. Quota is therefore read through a vendor
-// CLI that holds a console login, tried in order; the first logged-in one wins.
-// shortcut: one account key, so a second login or region would need its own key.
+// Model API keys alone cannot read subscription quota from the console RPC.
+// Quota is therefore read through a vendor CLI that holds a console login,
+// tried in order; the first logged-in one wins.
 type Run = (args: string[]) => Promise<{ json: string; code: number }>;
 
 interface Transport {
@@ -33,27 +32,53 @@ interface Transport {
 
 class CliMissingError extends Error {}
 
+function extractJsonText(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Handle CLIs that emit a leading warning/update line before the JSON payload.
+    const lines = trimmed.split(/\r?\n/);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const candidate = lines[i]!.trim();
+      if (!candidate.startsWith("{") && !candidate.startsWith("[")) continue;
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch {
+        // Keep scanning upward
+      }
+    }
+    return trimmed;
+  }
+}
+
 // A CLI prints a JSON envelope and then exits with its status, so a non-zero exit
 // with parseable output is a result, not a failure. Success JSON goes to stdout,
 // but the error envelope goes to stderr — accept either.
-function runCli(bin: string, args: string[]): Promise<{ json: string; code: number }> {
-  return new Promise((resolve, reject) => {
-    execFile(
-      bin,
-      args,
-      { encoding: "utf8", timeout: CLI_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        const json = stdout.trim() || stderr.trim();
-        if (!json) {
-          if ((err as { code?: string | number } | null)?.code === "ENOENT") {
-            return reject(new CliMissingError(`${bin} is not installed`));
-          }
-          return reject(err ?? new Error(`${bin} produced no output`));
-        }
-        resolve({ json, code: err ? Number((err as { code?: string | number }).code) || 1 : 0 });
-      },
-    );
-  });
+async function runCli(bin: string, args: string[]): Promise<{ json: string; code: number }> {
+  try {
+    const { stdout, stderr } = await execCommand(bin, args, {
+      encoding: "utf8",
+      timeout: CLI_TIMEOUT_MS,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    const json = extractJsonText(stdout) || extractJsonText(stderr);
+    if (!json) throw new Error(`${bin} produced no output`);
+    return { json, code: 0 };
+  } catch (err) {
+    const e = err as { code?: string | number; stdout?: string; stderr?: string };
+    const json = extractJsonText(e?.stdout ?? "") || extractJsonText(e?.stderr ?? "");
+    if (!json) {
+      if (e?.code === "ENOENT") {
+        throw new CliMissingError(`${bin} is not installed`);
+      }
+      throw err instanceof Error ? err : new Error(`${bin} failed`);
+    }
+    return { json, code: Number(e?.code) || 1 };
+  }
 }
 
 const ErrorEnvelopeSchema = z
@@ -115,8 +140,8 @@ function monthCycleSeconds(reset: Date): number {
 // console session by itself only when an AccessKey pair is configured.
 const BAILIAN: Transport = {
   bin: "bl",
-  // This plan lives in the Singapore region, which `bl` only reads when signed in
-  // to the international console site.
+  // International console accounts require `--console-site international`;
+  // domestic China accounts can omit the flag.
   login: "bl auth login --console --console-site international",
   statusArgs: ["auth", "status", "--output", "json"],
   // `bl usage *` needs a console session: a console token, or an AccessKey pair it
@@ -224,7 +249,7 @@ function bailianTokenPlan(payload: unknown, exitCode: number): UsageReport {
 
 // ── QwenCloud CLI (`qwencloud`): fallback for a plan on a QwenCloud login ──
 // Shapes are the CLI's published types (CodingPlanWindow); unchanged 1.3 → 1.7.
-// It has no refresh flow: our login expired within ~3 months and needed re-running.
+// Console logins expire periodically and may require re-authenticating.
 const QwencloudWindowSchema = z
   .object({
     total: z.number().positive().nullish(),
@@ -273,12 +298,14 @@ function qwencloudReport(payload: unknown, exitCode: number): UsageReport {
   };
 }
 
+const QWENCLOUD_AUTH_ERROR_RE = /^(?:TOKEN_EXPIRED|INVALID_TOKEN|UNAUTHORIZED|UNAUTHENTICATED|AUTH_FAILED|AUTH_REQUIRED|NOT_AUTHENTICATED)$/i;
+
 const QWENCLOUD: Transport = {
   bin: "qwencloud",
   login: "qwencloud auth login",
   statusArgs: ["auth", "status", "--format", "json"],
   loggedIn: (s) => s.authenticated === true,
-  isAuthError: (exitCode, code) => exitCode === 2 || /AUTH|TOKEN/i.test(code),
+  isAuthError: (exitCode, code) => exitCode === 2 || QWENCLOUD_AUTH_ERROR_RE.test(code),
   async read(run) {
     const summary = await run(["usage", "summary", "--format", "json"]);
     return qwencloudReport(JSON.parse(summary.json), summary.code);
@@ -289,20 +316,23 @@ const TRANSPORTS: readonly Transport[] = [BAILIAN, QWENCLOUD];
 
 export async function fetchAlibabaUsage(_input: AlibabaUsageInput): Promise<UsageReport> {
   let installed: Transport | undefined;
+  let lastError: unknown = null;
   for (const t of TRANSPORTS) {
     let status: unknown;
     try {
       status = JSON.parse((await runCli(t.bin, t.statusArgs)).json);
     } catch (err) {
       if (err instanceof CliMissingError) continue;
-      throw err;
+      lastError = err;
+      continue;
     }
     installed ??= t;
     if (!t.loggedIn(status as Record<string, unknown>)) continue;
     return t.read((args) => runCli(t.bin, args));
   }
-  if (!installed) throw new Error("Neither `bl` nor `qwencloud` is installed");
-  return rejected(installed.login);
+  if (installed) return rejected(installed.login);
+  if (lastError) throw lastError;
+  throw new Error("Neither `bl` nor `qwencloud` is installed");
 }
 
 export async function discoverAlibaba(): Promise<UsageAccount[]> {

@@ -6,7 +6,7 @@ import {
   useSubscription,
 } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -195,9 +195,24 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
   const [applyFeedback, setApplyFeedback] = useState<{ kind: "ok" | "warn"; text: string } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const subState = useSubscription(snapshotSubscription, {}, (next) => {
+  const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshingRef = useRef(false);
+  const syncingAaRef = useRef(false);
+  const costWindowRef = useRef<CostWindow>(costWindow);
+  costWindowRef.current = costWindow;
+  const latestGeneratedAtRef = useRef<string>("");
+
+  const applySnapshot = useCallback((next: QuotaAdvisorSnapshot) => {
+    if (latestGeneratedAtRef.current && next.generatedAt < latestGeneratedAtRef.current) {
+      return;
+    }
+    latestGeneratedAtRef.current = next.generatedAt;
     setSnapshot(next);
     setFetchError(next.error);
+  }, []);
+
+  const subState = useSubscription(snapshotSubscription, {}, (next) => {
+    applySnapshot(next);
   });
 
   // Initial fetch in case subscription takes a moment
@@ -206,8 +221,7 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
     fetchSnapshot({ refresh: false })
       .then((data) => {
         if (!active) return;
-        setSnapshot(data);
-        setFetchError(data.error);
+        applySnapshot(data);
       })
       .catch((err) => {
         if (!active) return;
@@ -216,7 +230,16 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
     return () => {
       active = false;
     };
-  }, [fetchSnapshot]);
+  }, [applySnapshot, fetchSnapshot]);
+
+  // Clear apply feedback timer on unmount
+  useEffect(() => {
+    return () => {
+      if (applyTimerRef.current) {
+        clearTimeout(applyTimerRef.current);
+      }
+    };
+  }, []);
 
   // Fetch API-equivalent cost estimates whenever window changes
   useEffect(() => {
@@ -264,35 +287,42 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
   );
 
   const handleRefresh = useCallback(async () => {
-    if (refreshing) return;
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
     setRefreshing(true);
     setFetchError(null);
     setCostsError(null);
+    const requestedWindow = costWindowRef.current;
     try {
       const [data, costData] = await Promise.all([
         fetchSnapshot({ refresh: true }),
-        fetchCosts({ window: costWindow, refresh: true }).catch((err) => {
-          setCostsError(err instanceof Error ? err.message : String(err));
+        fetchCosts({ window: requestedWindow, refresh: true }).catch((err) => {
+          if (costWindowRef.current === requestedWindow) {
+            setCostsError(err instanceof Error ? err.message : String(err));
+          }
           return null;
         }),
       ]);
-      setSnapshot(data);
-      setFetchError(data.error);
-      if (costData) setCosts(costData);
+      applySnapshot(data);
+      if (costData && costWindowRef.current === requestedWindow) {
+        setCosts(costData);
+      }
       setNowMs(Date.now());
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : String(err));
     } finally {
+      refreshingRef.current = false;
       setRefreshing(false);
     }
-  }, [costWindow, fetchCosts, fetchSnapshot, refreshing]);
+  }, [applySnapshot, fetchCosts, fetchSnapshot]);
 
   const handleSyncAa = useCallback(async () => {
-    if (syncingAa) return;
+    if (syncingAaRef.current) return;
     if (snapshot && !snapshot.hasAaKey) {
       openSettings();
       return;
     }
+    syncingAaRef.current = true;
     setSyncingAa(true);
     setSyncNotice(null);
     try {
@@ -311,9 +341,10 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
+      syncingAaRef.current = false;
       setSyncingAa(false);
     }
-  }, [openSettings, runSyncAa, snapshot, syncingAa]);
+  }, [openSettings, runSyncAa, snapshot]);
 
   const handleApply = useCallback(
     async (rec: ModelRecommendation) => {
@@ -349,7 +380,8 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
           kind: "ok",
           text: `Applied ${rec.label}${rec.recommendedThinking ? ` (${rec.recommendedThinking})` : ""} to composer.`,
         });
-        setTimeout(() => {
+        if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
+        applyTimerRef.current = setTimeout(() => {
           setAppliedKey((prev) => (prev === key ? null : prev));
         }, 2200);
       } catch (err) {

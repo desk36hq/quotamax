@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "updatedAt": "2026-11-24",
-  "notes": "Curated baseline inspired by Artificial Analysis Intelligence Index & price/efficiency frontiers, mapped to Paseo provider/model IDs. Run scripts/sync-aa.mjs with ARTIFICIAL_ANALYSIS_API_KEY to refresh live AA metrics, or edit scores directly to reflect your own experience.",
+  "notes": "Curated baseline inspired by Artificial Analysis Intelligence Index & price/efficiency frontiers, mapped to Paseo provider/model IDs. Use Sync AA in plugin Settings with an Artificial Analysis API key to refresh live metrics.",
   "pools": {
     "claude": {
       "label": "Claude",
@@ -90,7 +90,7 @@
       "bestFor": ["standard", "hard", "quick"],
       "thinking": { "conserve": "low", "balanced": "medium", "push": "high", "hammer": "high" },
       "aaMatch": ["sonnet-5-5", "sonnet 5.5"],
-      "notes": "Workhorse intelligence-per-quota sweet spot on Claude Pro for everyday engineering."
+      "notes": "Workhorse intelligence-per-quota sweet spot on Claude for everyday engineering."
     },
     {
       "id": "claude-haiku-5-5",
