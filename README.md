@@ -34,3 +34,12 @@ npm install
 npm run typecheck
 npm test
 ```
+
+## License
+
+[MIT](LICENSE)
+
+---
+
+Built by [Desk36](https://desk36.com).
+
