@@ -20,7 +20,9 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx test/alibabaUsage.selfcheck.mts && tsx test/usageCost.selfcheck.mts"
+    "test": "tsx test/alibabaUsage.selfcheck.mts && tsx test/usageCost.selfcheck.mts && tsx test/advisor.selfcheck.mts && tsx test/exec.selfcheck.mts",
+    "typecheck:orca": "orca plugin types . && tsc -p orca",
+    "test:orca": "orca plugin test . && orca plugin check ."
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.17.3",

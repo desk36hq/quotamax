@@ -1,10 +1,10 @@
-import { execCommand } from "@getpaseo/plugin/server";
+// Host-neutral quota advisor. It must not import zod or the Paseo SDK at runtime:
+// Orca loads this file as-is, without a bundler or node_modules.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { z } from "zod";
-import bundledCatalog from "./default-models.json";
 import type {
+  AdvisorSettingsValues,
   BurnMode,
   BurnRateEstimate,
   ModelRecommendation,
@@ -13,15 +13,13 @@ import type {
   SyncAaResult,
   TaskTier,
   WindowStats,
-} from "../shared/contract";
-import type { advisorSettings } from "../shared/settings";
+} from "../shared/types";
+import type { QuotaSource, UsageReportEntry, UsageWindowRaw } from "./quotaSource";
 
 const AA_ENDPOINTS = [
   "https://artificialanalysis.ai/api/v2/data/llms/models",
   "https://artificialanalysis.ai/api/v2/language/models",
 ];
-
-type AdvisorSettingsValues = z.infer<typeof advisorSettings.schema>;
 
 const POLL_INTERVAL_MS = 90_000;
 const HISTORY_RETENTION_MS = 65 * 60_000;
@@ -29,68 +27,150 @@ const PRIMARY_BURN_WINDOW_MS = 15 * 60_000;
 const FALLBACK_BURN_WINDOW_MS = 30 * 60_000;
 const VALID_TASKS: readonly TaskTier[] = ["quick", "standard", "hard", "frontier"];
 
-const CatalogPoolSchema = z.object({
-  label: z.string(),
-  sourceId: z.string(),
-  weeklyWindowId: z.string(),
-  shortWindowId: z.string(),
-  paseoProvider: z.string(),
-});
-
-const CatalogModelSchema = z.object({
-  id: z.string(),
-  provider: z.string(),
-  pool: z.string(),
-  label: z.string(),
-  tier: z.string(),
-  intelligence: z.number(),
-  coding: z.number(),
-  efficiency: z.number(),
-  quotaCost: z.number(),
-  bestFor: z.array(z.string()),
-  thinking: z.record(z.string(), z.string().nullable()).optional(),
-  aaMatch: z.array(z.string()).optional(),
-  aaMetrics: z
-    .object({
-      name: z.string(),
-      slug: z.string().nullable(),
-      intelligenceIndex: z.number().nullable(),
-      codingIndex: z.number().nullable(),
-      blendedPricePer1M: z.number().nullable(),
-      medianOutputTps: z.number().nullable(),
-      syncedAt: z.string(),
-    })
-    .optional(),
-  notes: z.string(),
-});
-
-const ModelCatalogSchema = z
-  .object({
-    updatedAt: z.string(),
-    pools: z.record(z.string(), CatalogPoolSchema),
-    models: z.array(CatalogModelSchema),
-  })
-  .passthrough();
-
-type CatalogModel = z.infer<typeof CatalogModelSchema>;
-type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
-
-interface UsageWindowRaw {
-  id: string;
-  label?: string;
-  usedPct?: number;
-  remainingPct?: number;
-  resetsAt?: string;
-  durationSeconds?: number;
+export interface CatalogPool {
+  label: string;
+  sourceId: string;
+  weeklyWindowId: string;
+  shortWindowId: string;
+  paseoProvider: string;
+  /** Other source ids that report this pool, tried after `sourceId` (e.g. a renamed source). */
+  sourceIds?: string[];
+  /**
+   * More window ids tried after `shortWindowId` / `weeklyWindowId`, in order. An id ending
+   * in `*` is a prefix (e.g. `interval_*` for per-model windows); when several windows
+   * match, the most-used one wins, since it is the one that binds.
+   */
+  shortWindowIds?: string[];
+  weeklyWindowIds?: string[];
+  /** Length assumed for the long window when the source omits it (default 7 days). */
+  weeklyWindowSeconds?: number;
+  /** Hosts whose quota source can report this pool (informational; shown in the README). */
+  hosts?: string[];
 }
 
-interface UsageReportEntry {
-  sourceId: string;
-  defaultEnabled?: boolean;
-  report?: {
-    status?: string;
-    planLabel?: string;
-    windows?: UsageWindowRaw[];
+export interface CatalogModel {
+  id: string;
+  provider: string;
+  pool: string;
+  label: string;
+  tier: string;
+  intelligence: number;
+  coding: number;
+  efficiency: number;
+  quotaCost: number;
+  bestFor: string[];
+  thinking?: Record<string, string | null>;
+  aaMatch?: string[];
+  /**
+   * A window that limits this model on its own, within its pool (e.g. Claude's separate
+   * weekly Fable limit, `weekly_model_fable`). Same id/prefix rules as pool windows.
+   */
+  modelWindowId?: string;
+  aaMetrics?: {
+    name: string;
+    slug: string | null;
+    intelligenceIndex: number | null;
+    codingIndex: number | null;
+    blendedPricePer1M: number | null;
+    medianOutputTps: number | null;
+    syncedAt: string;
+  };
+  notes: string;
+}
+
+export interface ModelCatalog {
+  updatedAt: string;
+  pools: Record<string, CatalogPool>;
+  models: CatalogModel[];
+  [key: string]: unknown;
+}
+
+// ── Catalog validation (replaces the former zod schemas; same acceptance rules) ──
+
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
+const isStr = (v: unknown): v is string => typeof v === "string";
+const isNum = (v: unknown): v is number => typeof v === "number" && !Number.isNaN(v);
+const isNullableNum = (v: unknown) => v === null || isNum(v);
+const isStrArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
+
+function validPool(v: unknown): v is CatalogPool {
+  return (
+    isObj(v) &&
+    isStr(v.label) &&
+    isStr(v.sourceId) &&
+    isStr(v.weeklyWindowId) &&
+    isStr(v.shortWindowId) &&
+    isStr(v.paseoProvider) &&
+    (v.sourceIds === undefined || isStrArray(v.sourceIds)) &&
+    (v.shortWindowIds === undefined || isStrArray(v.shortWindowIds)) &&
+    (v.weeklyWindowIds === undefined || isStrArray(v.weeklyWindowIds)) &&
+    (v.weeklyWindowSeconds === undefined || (isNum(v.weeklyWindowSeconds) && v.weeklyWindowSeconds > 0)) &&
+    (v.hosts === undefined || isStrArray(v.hosts))
+  );
+}
+
+function validModel(v: unknown): v is CatalogModel {
+  if (!isObj(v)) return false;
+  if (![v.id, v.provider, v.pool, v.label, v.tier, v.notes].every(isStr)) return false;
+  if (![v.intelligence, v.coding, v.efficiency, v.quotaCost].every(isNum)) return false;
+  if (!isStrArray(v.bestFor)) return false;
+  if (v.thinking !== undefined) {
+    if (!isObj(v.thinking)) return false;
+    if (!Object.values(v.thinking).every((t) => t === null || isStr(t))) return false;
+  }
+  if (v.aaMatch !== undefined && !isStrArray(v.aaMatch)) return false;
+  if (v.modelWindowId !== undefined && !isStr(v.modelWindowId)) return false;
+  if (v.aaMetrics !== undefined) {
+    const m = v.aaMetrics;
+    if (!isObj(m) || !isStr(m.name) || !isStr(m.syncedAt)) return false;
+    if (!(m.slug === null || isStr(m.slug))) return false;
+    if (![m.intelligenceIndex, m.codingIndex, m.blendedPricePer1M, m.medianOutputTps].every(isNullableNum)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** A validated copy of `raw`, or null when any part of it is malformed. */
+export function parseCatalog(raw: unknown): ModelCatalog | null {
+  if (!isObj(raw) || !isStr(raw.updatedAt) || !isObj(raw.pools) || !Array.isArray(raw.models)) {
+    return null;
+  }
+  if (!Object.values(raw.pools).every(validPool)) return null;
+  if (!raw.models.every(validModel)) return null;
+  return structuredClone(raw) as ModelCatalog;
+}
+
+/**
+ * Model fields that describe how QuotaMax reads a model's quota rather than how good it
+ * is. The bundled catalog owns them, so a catalog synced before a field existed (or
+ * changed) still gets it; an Artificial Analysis sync never writes them.
+ */
+function structuralFields(m: CatalogModel): Pick<CatalogModel, "modelWindowId"> {
+  return m.modelWindowId !== undefined ? { modelWindowId: m.modelWindowId } : {};
+}
+
+/**
+ * A catalog synced from Artificial Analysis keeps its model scores (intelligence, coding,
+ * efficiency, aaMetrics and the rest), but:
+ * - models present in both take their structural fields from the bundled catalog,
+ * - pools and models added to the bundled catalog in later releases are added,
+ * - the bundled pool settings (how a pool reads its quota windows) replace stale copies.
+ */
+export function mergeWithBundled(synced: ModelCatalog, bundled: ModelCatalog): ModelCatalog {
+  const pools: Record<string, CatalogPool> = { ...synced.pools, ...bundled.pools };
+  const key = (m: CatalogModel) => `${m.pool}|${m.provider}|${m.id}`;
+  const bundledByKey = new Map(bundled.models.map((m) => [key(m), m]));
+  const have = new Set(synced.models.map(key));
+  const models = synced.models.map((m) => {
+    const b = bundledByKey.get(key(m));
+    return b ? { ...m, ...structuralFields(b) } : m;
+  });
+  return {
+    ...synced,
+    pools,
+    models: [...models, ...bundled.models.filter((m) => !have.has(key(m)))],
   };
 }
 
@@ -102,27 +182,20 @@ interface PoolSample {
   weeklyResetsAt: string | null;
 }
 
-const SKILL_CATALOG_PATH = path.join(
-  os.homedir(),
-  ".agents",
-  "skills",
-  "quota-advisor",
-  "references",
-  "models.json"
-);
+export interface QuotaAdvisorOptions {
+  readSettings: () => Promise<AdvisorSettingsValues>;
+  /** Where quota windows come from: Paseo's usage tracker or Orca's rate limits. */
+  quotaSource: QuotaSource;
+  /** The catalog shipped with the plugin (server/default-models.json). */
+  bundledCatalog: unknown;
+  /** This host's data folder; the Artificial Analysis sync writes models.json here. */
+  dataDir: string;
+  /** Catalogs synced under another host, read when this host has none of its own. */
+  fallbackCatalogPaths?: string[];
+}
 
-const PLUGIN_DATA_CATALOG_PATH = path.join(
-  os.homedir(),
-  ".paseo",
-  "plugin-data",
-  "quota-advisor",
-  "models.json"
-);
-
-function resolveCatalogWritePath(): string {
-  if (fs.existsSync(SKILL_CATALOG_PATH)) return SKILL_CATALOG_PATH;
-  fs.mkdirSync(path.dirname(PLUGIN_DATA_CATALOG_PATH), { recursive: true });
-  return PLUGIN_DATA_CATALOG_PATH;
+function skillCatalogPath(): string {
+  return path.join(os.homedir(), ".agents", "skills", "quota-advisor", "references", "models.json");
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -162,20 +235,10 @@ function writeFileAtomically(filePath: string, content: string): void {
 function tryReadValidatedCatalog(filePath: string): ModelCatalog | null {
   try {
     if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, "utf8");
-    const parsed = ModelCatalogSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    return parseCatalog(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch {
     return null;
   }
-}
-
-function loadCatalog(): ModelCatalog {
-  return (
-    tryReadValidatedCatalog(SKILL_CATALOG_PATH) ??
-    tryReadValidatedCatalog(PLUGIN_DATA_CATALOG_PATH) ??
-    (structuredClone(bundledCatalog) as unknown as ModelCatalog)
-  );
 }
 
 function resolveAaApiKey(settings: AdvisorSettingsValues): string {
@@ -334,10 +397,59 @@ function estimateBurn(
   };
 }
 
+/** Ids are exact, or a prefix when they end in `*`. */
+function matchesWindowId(id: string, pattern: string): boolean {
+  return pattern.endsWith("*") ? id.startsWith(pattern.slice(0, -1)) : id === pattern;
+}
+
+function usedOf(w: UsageWindowRaw): number {
+  if (typeof w.usedPct === "number" && Number.isFinite(w.usedPct)) return w.usedPct;
+  if (typeof w.remainingPct === "number" && Number.isFinite(w.remainingPct)) return 100 - w.remainingPct;
+  return -1;
+}
+
+/** The first pattern that matches wins; among its matches, the most-used window binds. */
+function pickWindow(windows: UsageWindowRaw[], patterns: string[]): UsageWindowRaw | undefined {
+  for (const pattern of patterns) {
+    const hits = windows.filter((w) => matchesWindowId(w.id, pattern));
+    if (hits.length) return hits.reduce((a, b) => (usedOf(b) > usedOf(a) ? b : a));
+  }
+  return undefined;
+}
+
+/** The pool's report: the first available one among its source ids, else the first found. */
+function findPoolEntry(reports: UsageReportEntry[], cfg: CatalogPool): UsageReportEntry | undefined {
+  const ids = [cfg.sourceId, ...(cfg.sourceIds ?? [])];
+  const matches = ids.flatMap((id) => reports.filter((r) => r.sourceId === id));
+  return (
+    matches.find((r) => r.defaultEnabled !== false && r.report?.status === "available") ?? matches[0]
+  );
+}
+
+interface ModelLimit {
+  penalty: number;
+  note: string;
+}
+
+/** A model-specific limit counts only once it is low: nearly gone, or in caution range. */
+function modelLimitFrom(stats: WindowStats, model: CatalogModel): ModelLimit | null {
+  if (stats.remainingPct <= 5) {
+    return { penalty: -60, note: `${stats.label} limit nearly used up (${stats.remainingPct}% left)` };
+  }
+  if (stats.remainingPct <= 15) {
+    return {
+      penalty: -10 * model.quotaCost,
+      note: `${stats.label} limit low (${stats.remainingPct}% left)`,
+    };
+  }
+  return null;
+}
+
 function scoreModelForTask(
   model: CatalogModel,
   poolState: PoolStatus,
-  task: TaskTier
+  task: TaskTier,
+  modelLimit?: ModelLimit
 ): ModelRecommendation {
   const iq = 0.45 * model.intelligence + 0.55 * model.coding;
   const eff = model.efficiency;
@@ -403,6 +515,9 @@ function scoreModelForTask(
   if (poolState.shortCaution) {
     penalty -= 10 * model.quotaCost;
   }
+  if (modelLimit) {
+    penalty += modelLimit.penalty;
+  }
 
   const fitScore = wIq * iq + wEff * eff + penalty + hammerUpgradeBonus;
   const totalScore = fitScore + poolState.urgencyBonus;
@@ -437,7 +552,7 @@ function scoreModelForTask(
     fitScore: Number(fitScore.toFixed(1)),
     urgencyBonus: poolState.urgencyBonus,
     totalScore: Number(totalScore.toFixed(1)),
-    notes: model.notes,
+    notes: modelLimit ? `${modelLimit.note}. ${model.notes}` : model.notes,
   };
 }
 
@@ -445,6 +560,10 @@ export class QuotaAdvisorService {
   private readonly history = new Map<string, PoolSample[]>();
   private readonly listeners = new Set<(snapshot: QuotaAdvisorSnapshot) => void>();
   private readonly readSettings: () => Promise<AdvisorSettingsValues>;
+  private readonly quotaSource: QuotaSource;
+  private readonly bundled: ModelCatalog;
+  private readonly dataCatalogPath: string;
+  private readonly fallbackCatalogPaths: string[];
   private latest: QuotaAdvisorSnapshot | null = null;
   private inflight: Promise<QuotaAdvisorSnapshot> | null = null;
   private syncInflight: Promise<SyncAaResult> | null = null;
@@ -452,8 +571,46 @@ export class QuotaAdvisorService {
   private abortController = new AbortController();
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(readSettings: () => Promise<AdvisorSettingsValues>) {
-    this.readSettings = readSettings;
+  constructor(options: QuotaAdvisorOptions) {
+    this.readSettings = options.readSettings;
+    this.quotaSource = options.quotaSource;
+    const bundled = parseCatalog(options.bundledCatalog);
+    if (!bundled) throw new Error("The bundled model catalog (default-models.json) is invalid");
+    this.bundled = bundled;
+    this.dataCatalogPath = path.join(options.dataDir, "models.json");
+    this.fallbackCatalogPaths = options.fallbackCatalogPaths ?? [];
+  }
+
+  /** Burn-rate samples, so a host whose worker restarts can keep its 15-minute history. */
+  exportHistory(): Record<string, PoolSample[]> {
+    return Object.fromEntries(this.history);
+  }
+
+  importHistory(saved: unknown): void {
+    if (!isObj(saved)) return;
+    const cutoff = Date.now() - HISTORY_RETENTION_MS;
+    for (const [pool, samples] of Object.entries(saved)) {
+      if (!Array.isArray(samples)) continue;
+      const kept = samples.filter(
+        (s): s is PoolSample => isObj(s) && isNum(s.ts) && s.ts >= cutoff
+      );
+      if (kept.length) this.history.set(pool, kept);
+    }
+  }
+
+  private loadCatalog(): ModelCatalog {
+    for (const p of [skillCatalogPath(), this.dataCatalogPath, ...this.fallbackCatalogPaths]) {
+      const synced = tryReadValidatedCatalog(p);
+      if (synced) return mergeWithBundled(synced, this.bundled);
+    }
+    return structuredClone(this.bundled);
+  }
+
+  private catalogWritePath(): string {
+    const skill = skillCatalogPath();
+    if (fs.existsSync(skill)) return skill;
+    fs.mkdirSync(path.dirname(this.dataCatalogPath), { recursive: true });
+    return this.dataCatalogPath;
   }
 
   start(): void {
@@ -510,7 +667,7 @@ export class QuotaAdvisorService {
     const settings = await this.readSettings();
     const apiKey = resolveAaApiKey(settings);
     const recalibrate = recalibrateOverride ?? settings.recalibrateOnSync;
-    const catalog = loadCatalog();
+    const catalog = this.loadCatalog();
 
     if (!apiKey) {
       return {
@@ -634,7 +791,7 @@ export class QuotaAdvisorService {
     }
 
     catalog.updatedAt = today;
-    writeFileAtomically(resolveCatalogWritePath(), JSON.stringify(catalog, null, 2) + "\n");
+    writeFileAtomically(this.catalogWritePath(), JSON.stringify(catalog, null, 2) + "\n");
     await this.poll(false);
 
     return {
@@ -676,19 +833,15 @@ export class QuotaAdvisorService {
     const nowIso = new Date(nowMs).toISOString();
 
     try {
-      const catalog = loadCatalog();
-      const cmdArgs = ["usage", "--json"];
-      if (refresh) cmdArgs.push("--refresh");
-      const { stdout } = await execCommand("paseo", cmdArgs, {
-        encoding: "utf8",
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: 20_000,
-        signal: this.abortController.signal,
-      });
-      const reports = JSON.parse(stdout) as UsageReportEntry[];
+      const catalog = this.loadCatalog();
+      const reports: UsageReportEntry[] = await this.quotaSource.fetch(
+        refresh,
+        this.abortController.signal
+      );
 
+      const rawWindowsByPool = new Map<string, UsageWindowRaw[]>();
       const pools: PoolStatus[] = Object.entries(catalog.pools).map(([poolKey, cfg]) => {
-        const entry = reports.find((r) => r.sourceId === cfg.sourceId);
+        const entry = findPoolEntry(reports, cfg);
         if (!entry || entry.defaultEnabled === false || entry.report?.status !== "available") {
           return {
             pool: poolKey,
@@ -699,7 +852,9 @@ export class QuotaAdvisorService {
             mode: "UNTRACKED",
             urgencyBonus: -999,
             shortCaution: false,
-            reason: entry ? `Status: ${entry.report?.status || "disabled"}` : "Not reported by paseo usage",
+            reason: entry
+              ? `Status: ${entry.report?.status || "disabled"}${entry.report?.message ? ` — ${entry.report.message}` : ""}`
+              : `Not reported by ${this.quotaSource.name}`,
             weekly: null,
             short: null,
             burn: {
@@ -716,13 +871,14 @@ export class QuotaAdvisorService {
         }
 
         const windows = entry.report.windows || [];
+        rawWindowsByPool.set(poolKey, windows);
         const weekly = parseWindow(
-          windows.find((w) => w.id === cfg.weeklyWindowId),
+          pickWindow(windows, [cfg.weeklyWindowId, ...(cfg.weeklyWindowIds ?? [])]),
           nowMs,
-          604_800
+          cfg.weeklyWindowSeconds ?? 604_800
         );
         const short = parseWindow(
-          windows.find((w) => w.id === cfg.shortWindowId),
+          pickWindow(windows, [cfg.shortWindowId, ...(cfg.shortWindowIds ?? [])]),
           nowMs,
           18_000
         );
@@ -817,10 +973,24 @@ export class QuotaAdvisorService {
       const poolMap = new Map(pools.map((p) => [p.pool, p]));
       const eligibleModels = catalog.models.filter((m) => poolMap.get(m.pool)?.tracked);
 
+      // Models with a limit of their own inside the pool (e.g. Claude's weekly Fable limit).
+      const modelLimits = new Map<CatalogModel, ModelLimit>();
+      for (const m of eligibleModels) {
+        if (!m.modelWindowId) continue;
+        const cfg = catalog.pools[m.pool];
+        const stats = parseWindow(
+          pickWindow(rawWindowsByPool.get(m.pool) ?? [], [m.modelWindowId]),
+          nowMs,
+          cfg?.weeklyWindowSeconds ?? 604_800
+        );
+        const limit = stats ? modelLimitFrom(stats, m) : null;
+        if (limit) modelLimits.set(m, limit);
+      }
+
       const recommendations = {} as Record<TaskTier, ModelRecommendation[]>;
       for (const t of VALID_TASKS) {
         recommendations[t] = eligibleModels
-          .map((m) => scoreModelForTask(m, poolMap.get(m.pool)!, t))
+          .map((m) => scoreModelForTask(m, poolMap.get(m.pool)!, t, modelLimits.get(m)))
           .sort((a, b) => b.totalScore - a.totalScore);
       }
 
@@ -846,7 +1016,8 @@ export class QuotaAdvisorService {
       return snapshot;
     } catch (err) {
       const rawMsg = err instanceof Error ? err.message : String(err);
-      const msg = rawMsg.split(/\r?\n/)[0]?.slice(0, 200) || "Failed to read Paseo usage";
+      const msg =
+        rawMsg.split(/\r?\n/)[0]?.slice(0, 200) || `Failed to read ${this.quotaSource.displayName}`;
       const fallback: QuotaAdvisorSnapshot = this.latest
         ? { ...this.latest, lastPolledAt: nowIso, error: msg }
         : {
