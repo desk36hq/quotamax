@@ -1,0 +1,59 @@
+{
+  "manifestVersion": 2,
+  "id": "quotamax",
+  "name": "QuotaMax",
+  "version": "0.1.0",
+  "description": "Live quota pacing, model + thinking recommendations with Apply, and API-equivalent cost estimates across your AI coding subscriptions.",
+  "author": { "name": "Desk36", "url": "https://desk36.com" },
+  "repository": "https://github.com/desk36hq/quotamax",
+  "homepage": "https://github.com/desk36hq/quotamax",
+  "license": "MIT",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "orca/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "quotamax",
+        "title": "QuotaMax",
+        "icon": "gauge",
+        "entry": "orca/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "commands": [
+      {
+        "id": "quotamax.refresh",
+        "title": "QuotaMax: Refresh quota"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "quotamax",
+        "text": "QuotaMax",
+        "icon": "gauge",
+        "tooltip": "QuotaMax: reading Orca's rate limits…",
+        "command": "quotamax.refresh"
+      }
+    ],
+    "settings": [
+      {
+        "key": "recalibrateOnSync",
+        "title": "Recalibrate scores on Artificial Analysis sync",
+        "description": "Rescale the catalog's intelligence, coding and efficiency scores from the live Artificial Analysis indexes when you sync. Off keeps the curated scores and only records the live metrics.",
+        "type": "boolean",
+        "default": true
+      }
+    ]
+  },
+  "capabilities": [
+    { "kind": "storage:own" },
+    { "kind": "secrets:own" },
+    { "kind": "settings:own" },
+    { "kind": "agent:read" },
+    { "kind": "terminal:send" }
+  ]
+}

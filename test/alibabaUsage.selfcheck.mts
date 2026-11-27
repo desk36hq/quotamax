@@ -10,10 +10,17 @@ import { discoverAlibaba, fetchAlibabaUsage } from "../server/alibabaUsage";
 
 const dir = mkdtempSync(path.join(os.tmpdir(), "qa-alibaba-stub-"));
 process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
+const isWindows = process.platform === "win32";
 // Only `node` and the stubs are on PATH, so the real `bl` / `qwencloud` installed on
-// this machine cannot leak into a case that is meant to run without them.
-symlinkSync(process.execPath, `${dir}/node`);
-process.env.PATH = `${dir}:/usr/bin:/bin`;
+// this machine cannot leak into a case that is meant to run without them. On Windows
+// each stub is a `.cmd` wrapper that runs node by absolute path, so PATH needs only
+// the stub folder and System32 (for cmd.exe).
+if (isWindows) {
+  process.env.PATH = `${dir};${path.join(process.env.SystemRoot ?? "C:\\Windows", "System32")}`;
+} else {
+  symlinkSync(process.execPath, `${dir}/node`);
+  process.env.PATH = `${dir}:/usr/bin:/bin`;
+}
 
 // One stub per CLI; each call looks up its reply by argv in replies.json.
 const STUB = `#!/usr/bin/env node
@@ -29,10 +36,14 @@ type Reply = { out: string; code: number };
 
 /** Install only `bins` and make each argv resolve to its reply. */
 function stage(bins: string[], map: Record<string, [unknown, number?]>) {
-  for (const b of ["bl", "qwencloud"]) rmSync(`${dir}/${b}`, { force: true });
+  for (const b of ["bl", "qwencloud"]) {
+    rmSync(`${dir}/${b}`, { force: true });
+    rmSync(`${dir}/${b}.cmd`, { force: true });
+  }
   for (const b of bins) {
     writeFileSync(`${dir}/${b}`, STUB);
     chmodSync(`${dir}/${b}`, 0o755);
+    if (isWindows) writeFileSync(`${dir}/${b}.cmd`, `@"${process.execPath}" "%~dp0${b}" %*\r\n`);
   }
   const replies = Object.fromEntries(
     Object.entries(map).map(([argv, [payload, code]]) => [argv, { out: JSON.stringify(payload), code: code ?? 0 }]),

@@ -1,5 +1,9 @@
 import type { PluginServerContext } from "@getpaseo/plugin/server";
+import os from "node:os";
+import path from "node:path";
 import { QuotaAdvisorService } from "./server/advisor";
+import bundledCatalog from "./server/default-models.json";
+import { createPaseoQuotaSource } from "./server/paseoQuotaSource";
 import {
   alibabaInputSchema,
   discoverAlibaba,
@@ -31,10 +35,20 @@ export default function contribute(server: PluginServerContext) {
     return { aaApiKey: "", recalibrateOnSync: true };
   };
 
-  const service = new QuotaAdvisorService(readSettings);
+  // Paseo keeps its synced catalog and price cache where QuotaMax always has.
+  const dataDir = path.join(os.homedir(), ".paseo", "plugin-data", "quota-advisor");
+
+  const service = new QuotaAdvisorService({
+    readSettings,
+    quotaSource: createPaseoQuotaSource(),
+    bundledCatalog,
+    dataDir,
+  });
   service.start();
 
-  const costEstimator = new CostEstimatorService();
+  const costEstimator = new CostEstimatorService({
+    ratesCachePath: path.join(dataDir, "litellm-rates-cache.json"),
+  });
 
   const stopSettingsSub = settingsHandle.subscribe(() => {
     void service.notifySettingsChanged();

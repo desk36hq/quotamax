@@ -17,7 +17,7 @@ import type {
   CostWindow,
   ModelCostBreakdown,
   PoolCostBreakdown,
-} from "../shared/contract";
+} from "../shared/types";
 import {
   cacheSavingsUsd,
   createOverrideRateTable,
