@@ -32,7 +32,8 @@ assert.equal(findOnPath("tool", env, "win32"), toolExe);
 //    not as `orca.exe.exe`.
 const orcaExe = file(win, "orca.exe");
 assert.equal(findOnPath("orca.exe", env, "win32"), orcaExe);
-assert.equal(findOnPath("ORCA.EXE", env, "win32") !== null, true, "extensions match case-insensitively");
+const upperExe = file(win, "TOOL2.EXE");
+assert.equal(findOnPath("TOOL2.EXE", env, "win32"), upperExe, "extensions match case-insensitively");
 const cmdShim = file(win, "bl.cmd");
 assert.equal(findOnPath("bl.cmd", env, "win32"), cmdShim);
 assert.equal(findOnPath("missing.exe", env, "win32"), null);
