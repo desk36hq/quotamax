@@ -4,7 +4,10 @@
   "name": "QuotaMax",
   "version": "0.1.0",
   "description": "Live quota pacing, model + thinking recommendations with Apply, and API-equivalent cost estimates across your AI coding subscriptions.",
-  "author": { "name": "Desk36", "url": "https://desk36.com" },
+  "author": {
+    "name": "Desk36",
+    "url": "https://desk36.com"
+  },
   "repository": "https://github.com/desk36hq/quotamax",
   "homepage": "https://github.com/desk36hq/quotamax",
   "license": "MIT",
@@ -20,8 +23,8 @@
         "id": "quotamax",
         "title": "QuotaMax",
         "icon": "gauge",
-        "entry": "orca/panel.tsx",
-        "ui": "components"
+        "entry": "orca/ui/main.ts",
+        "ui": "html"
       }
     ],
     "commands": [
@@ -50,10 +53,20 @@
     ]
   },
   "capabilities": [
-    { "kind": "storage:own" },
-    { "kind": "secrets:own" },
-    { "kind": "settings:own" },
-    { "kind": "agent:read" },
-    { "kind": "terminal:send" }
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "secrets:own"
+    },
+    {
+      "kind": "settings:own"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:send"
+    }
   ]
 }

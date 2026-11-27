@@ -17,7 +17,7 @@ Live quota pacing, intelligent model + thinking recommendations with Apply, and 
 
 ![QuotaMax Dashboard](assets/hero-dashboard.svg)
 
-<sub>The Paseo panel. In Orca the same data appears in a right-sidebar panel with **Recommend**, **Pools**, **Costs** and **Settings** tabs, plus a status bar item.</sub>
+<sub>The Paseo panel. The Orca panel has the same layout and styling, follows Orca's light/dark theme, and adds a status bar item.</sub>
 
 ---
 
@@ -62,8 +62,9 @@ QuotaMax runs the same advisor, catalog and cost estimator on both hosts. These 
 | **Where you sign in to providers** | Paseo's provider settings | Orca → Settings → Accounts (and each agent's own login) |
 | **Opening QuotaMax** | Explorer panel, sidebar gauge, Command Center → `Open QuotaMax` | Right sidebar → gauge icon (**QuotaMax** panel); status bar item; palette → `QuotaMax: Refresh quota` |
 | **Apply** | 1 click, on the focused composer | Preview → **Send**; types into an idle agent's terminal (see [Apply in Orca](#apply-in-orca)) |
-| **Artificial Analysis key** | Settings → QuotaMax; stored in Paseo plugin settings on the host | QuotaMax panel → Settings tab; stored in Orca's encrypted plugin secrets |
-| **"Recalibrate on sync" toggle** | Settings → QuotaMax | Orca Settings → Plugins → QuotaMax, or the panel's Settings tab |
+| **Settings** | A separate screen: Settings → QuotaMax | An inline card in the panel: the gear button next to Refresh |
+| **Artificial Analysis key** | Settings → QuotaMax; stored in Paseo plugin settings on the host | Panel → gear button; stored in Orca's encrypted plugin secrets |
+| **"Recalibrate on sync" toggle** | Settings → QuotaMax | Panel → gear button, or Orca Settings → Plugins → QuotaMax |
 | **Data folder** (synced catalog, price cache) | `~/.paseo/plugin-data/quota-advisor/` | `~/.quotamax/` (uses a catalog synced under Paseo until you sync in Orca) |
 | **Burn-rate history** | In memory; starts over when the plugin restarts | Kept in plugin storage; survives a restart |
 | **Environment variables** (`ARTIFICIAL_ANALYSIS_API_KEY`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `ANTIGRAVITY_DATA_DIR`) | Read from the daemon's environment | **Not seen.** Orca starts plugins with a minimal environment, so enter the key in the panel; session logs are read from their default folders |
@@ -180,7 +181,7 @@ orca plugin open desk36hq.quotamax --panel quotamax
 **Post-install notes for agents (both hosts):**
 - **No API keys required** to start. Quota pacing reads the host's usage data (`paseo usage --json` on Paseo, `orca account list --json` on Orca); cost estimates read local session logs (`~/.claude/projects`, `~/.codex/sessions`, `~/.gemini/antigravity-cli/conversations`, `~/.pi/agent/sessions`).
 - **No external runtime dependencies** (e.g. LiteLLM is *not* installed — only its public GitHub pricing JSON is fetched once per 24h, with automatic fallback to `https://openrouter.ai/api/v1/models` and built-in rates).
-- **Optional Artificial Analysis sync:** the user can add a free key from `https://artificialanalysis.ai/insights` — Paseo: **Settings → QuotaMax** (or `ARTIFICIAL_ANALYSIS_API_KEY` in the daemon's environment); Orca: **QuotaMax panel → Settings tab** only, because Orca plugins don't see the shell's environment variables.
+- **Optional Artificial Analysis sync:** the user can add a free key from `https://artificialanalysis.ai/insights` — Paseo: **Settings → QuotaMax** (or `ARTIFICIAL_ANALYSIS_API_KEY` in the daemon's environment); Orca: **QuotaMax panel → gear button** only, because Orca plugins don't see the shell's environment variables.
 
 ---
 
@@ -193,7 +194,7 @@ npm install
 npm run typecheck        # Paseo plugin + shared code
 npm test                 # self-checks: Alibaba CLIs, cost engine, advisor
 npm run typecheck:orca   # Orca plugin (needs the Orca CLI for its typings)
-npm run test:orca        # Orca plugin tests + panel render check (needs the Orca CLI)
+npm run test:orca        # Orca plugin tests + plugin check (needs the Orca CLI)
 ```
 
 Live development: `paseo plugin install "$(pwd)"` then `paseo plugin reload quotamax`; or `orca plugin dev watch . --check` for Orca.

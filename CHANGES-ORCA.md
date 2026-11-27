@@ -8,10 +8,10 @@ The Paseo plugin's behaviour is unchanged except for the items listed under [Cha
 
 - **New Orca plugin** (`orca-plugin.json` + `orca/`):
   - a worker that reads Orca's rate limits
-  - a right-sidebar panel with Recommend / Pools / Costs / Settings tabs
+  - a right-sidebar panel with the same layout and styling as the Paseo panel (an HTML panel themed from Orca's colours)
   - a status bar item
   - a two-step Apply that types `/model …` into an idle agent
-  - 17 tests
+  - 21 tests
 - **Shared core refactor:** the advisor, Alibaba reader and command runner no longer import zod or the Paseo SDK at runtime. Orca loads TypeScript as-is, without a bundler or `node_modules`. Paseo wiring moved into small Paseo-only files.
 - **Six new subscription pools** for both hosts: Kimi Code, MiniMax M Plan, X Subscription (Grok + Cursor), OpenCode Go, Muse Code and GitHub Copilot (Copilot is Paseo only).
 - **Smarter window matching:** pools can now match windows by prefix or through alternative source ids, which Kimi, MiniMax, Cursor and Copilot need.
@@ -30,7 +30,7 @@ The Paseo plugin's behaviour is unchanged except for the items listed under [Cha
 
 ## Orca-specific behaviour worth knowing
 
-- **Environment variables don't reach the plugin.** Orca starts plugins with a minimal environment, so variables set in your shell don't reach QuotaMax in Orca. That covers `ARTIFICIAL_ANALYSIS_API_KEY` and custom log folders like `CLAUDE_CONFIG_DIR`. Enter the key in the panel's Settings tab; session logs are read from their default folders. The README flags this.
+- **Environment variables don't reach the plugin.** Orca starts plugins with a minimal environment, so variables set in your shell don't reach QuotaMax in Orca. That covers `ARTIFICIAL_ANALYSIS_API_KEY` and custom log folders like `CLAUDE_CONFIG_DIR`. Enter the key in the panel's settings (the gear button); session logs are read from their default folders. The README flags this.
 - **A brief loading state on first open.** The first panel open after Orca (or the plugin) starts shows a loading skeleton for a few seconds while the first `orca account list` call runs.
 
 ## Things I found but did not change
@@ -66,8 +66,12 @@ The Paseo plugin's behaviour is unchanged except for the items listed under [Cha
   - It also gives every CLI it runs the standard profile folders back. Orca starts plugin workers with a trimmed environment; on Windows there is no `APPDATA`, `LOCALAPPDATA` or `HOME`. Without them the Orca CLI fails with `runtime_unavailable`. The live test caught this.
 - `orca/worker.ts`: runs the advisor and cost estimator, answers panel requests, keeps burn history in plugin storage, updates the status bar, stores the Artificial Analysis key in Orca's encrypted secrets, and registers the refresh command.
 - `orca/apply.ts`, `orca/applyTypes.ts`: Apply. It previews first, then on **Send** types into an *idle* matching agent, re-checking just before typing. Claude Code, Codex, Copilot, Pi and Grok are typed into. Kimi, OpenCode, Cursor, Muse and Antigravity get a launch command instead, because their `/model` is a picker or is unconfirmed. Model ids are restricted to safe characters.
-- `orca/panel.tsx`, `orca/protocol.ts`: the panel UI in Orca components, and the typed panel ↔ worker contract.
-- `orca/*.test.ts(x)`, `orca/panel.check.ts`, `orca/tsconfig.json`: tests, render-check scenarios and Orca type checking.
+- `orca/ui/`: the panel. It is an HTML panel that reproduces the Paseo panel (`client/panel.tsx`) section by section: the header with Refresh and Settings, the Recommended Models, Burn Pace & Resets and API-Equivalent Cost cards, and the footer.
+  - Paseo's separate Settings → QuotaMax screen becomes an inline card behind the gear button.
+  - Surfaces, text and borders come from Orca's theme variables, so it follows Orca's light/dark theme. Mode and status colours are the Paseo palette.
+  - `render.ts` is pure (state → HTML, every value escaped), `styles.ts` holds the CSS, `icons.ts` the inlined Lucide icons, `format.ts` the formatters ported from the Paseo panel, and `main.ts` the DOM and Orca frame-API glue.
+- `orca/protocol.ts`: the typed panel ↔ worker contract.
+- `orca/*.test.ts`, `orca/ui/render.test.ts`, `orca/tsconfig.json`: tests and Orca type checking.
 
 **Tooling and docs**
 - `test/alibabaUsage.selfcheck.mts`: now also runs on Windows, using `.cmd` stubs instead of a symlink and shebang scripts.
@@ -86,18 +90,18 @@ The Paseo plugin's behaviour is unchanged except for the items listed under [Cha
 - **Self-checks:** `npm run typecheck` passes. `npm test` passes: Alibaba A–N, which now passes on Windows (case K failed before the fix), plus cost engine and advisor A–H.
 - **Orca 1.4.279:**
   - `npm run typecheck:orca` passes.
-  - `orca plugin test .` passes 17/17.
-  - `orca plugin check .` renders three scenarios with the real worker and no issues.
+  - `orca plugin test .` passes 21/21, including the panel renderer.
+  - `orca plugin check .` passes.
   - `orca plugin validate .` passes with no warnings.
 - **Orca 1.4.279, live:** loaded as an approved development plugin.
   - The worker reads the live rate limits. Claude is tracked; untracked pools show Orca's own reasons, e.g. *"Codex not signed in"*.
   - The cost estimate works: 7 days, LiteLLM prices, cache in `~/.quotamax/`.
   - The status bar shows *"Claude · Balanced"*.
-  - The panel's Recommend tab renders with live data.
+  - The panel renders with live data, matching the Paseo layout.
   - The first live run found the trimmed-environment problem above. It is fixed and covered by a test.
 
 **Not verified here:**
-- Screenshots of the Pools, Costs and Settings tabs inside the app. Orca only allows those captures while its window is hidden. Their render checks pass.
+- The settings card and the Apply confirmation inside the running app. Orca only captures interaction states while its window is hidden. Both were checked with the same HTML and CSS in headless Edge (dark and light) and are covered by renderer tests.
 - Apply typing into a real agent. It is covered by unit tests; step 3 of *Trying the Orca side* below tries it live.
 - Environment on macOS and Linux: whether Orca's worker environment there is also trimmed. The fix covers `HOME` either way.
 - Antigravity/ZCode/Kimi/MiniMax/Grok/Cursor/Muse/OpenCode Go quota on either host, because there were no logins for them. The mapping follows their published shapes.
@@ -132,6 +136,6 @@ The Paseo plugin's behaviour is unchanged except for the items listed under [Cha
 
 1. Run `orca plugin dev load "$(pwd)" --json`. It stops with `approval_required` and lists the access the plugin asks for. If you agree, re-run the printed command with `--approve <fingerprint>`.
 2. Open the gauge icon in Orca's right sidebar (or run `orca plugin open local.quotamax --panel quotamax`). The status bar shows the pool to use now.
-3. Apply: start Claude Code in a workspace and let it go idle. Pick a Claude recommendation, then **Apply to agent** → **Send**. **Expect** `/model …` and `/effort …` to be typed into that agent.
+3. Apply: start Claude Code in a workspace and let it go idle. Press **Apply** on a Claude recommendation, then **Send**. **Expect** `/model …` and `/effort …` to be typed into that agent.
 4. Unload with `orca plugin dev unload "$(pwd)"`.
 5. To publish for `orca plugin install desk36hq/quotamax`: set `version` in `orca-plugin.json`, tag `v<version>`, and add the `orca-plugin` GitHub topic.
