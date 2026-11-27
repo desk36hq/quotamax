@@ -77,8 +77,8 @@ QuotaMax runs the same advisor, catalog and cost estimator on both hosts. These 
 |---|:---:|:---:|---|
 | Claude (incl. Fable weekly limit) | ✅ | ✅ | |
 | Codex | ✅ | ✅ | |
-| Antigravity (Gemini) · Antigravity (Claude & GPT) | ❌ | ✅ | **Orca only.** Paseo 0.18 has no Antigravity quota source. |
-| GLM Coding Plan | ❌ | ✅ | **Orca only.** Paseo's Z.ai source reports no quota windows; Orca reads it as ZCode. |
+| Antigravity (Gemini) · Antigravity (Claude & GPT) | ⚠️ | ✅ | **Paseo:** works with Paseo 0.17.x or a community usage plugin that reports Antigravity windows; Paseo 0.18's built-in sources don't report them yet. **Orca:** read from Orca's Antigravity rate limits. |
+| GLM Coding Plan | ⚠️ | ✅ | **Paseo:** works with Paseo 0.17.x or a community usage plugin (e.g. `glm-usage`); Paseo 0.18's built-in Z.ai source doesn't report windows yet. **Orca:** read as ZCode. |
 | Alibaba Token Plan | ✅ | ✅ | Needs the `bl` or `qwencloud` CLI logged in, on both hosts. |
 | Kimi Code | ✅ | ✅ | |
 | MiniMax M Plan | ✅ | ✅ | |
@@ -86,6 +86,8 @@ QuotaMax runs the same advisor, catalog and cost estimator on both hosts. These 
 | OpenCode Go | ✅ | ✅ | |
 | Muse Code | ✅ | ✅ | |
 | GitHub Copilot | ✅ | ❌ | **Paseo only.** Orca doesn't report Copilot usage. |
+
+✅ tracked with the host's built-in usage data · ⚠️ needs an older host version or an extra usage plugin · ❌ not available on that host.
 
 A pool shows as untracked until you sign in to that provider on the host. Scores for Kimi, MiniMax, X Subscription, OpenCode Go, Muse and Copilot models are estimates; an Artificial Analysis sync replaces them with live values.
 

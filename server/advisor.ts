@@ -143,18 +143,34 @@ export function parseCatalog(raw: unknown): ModelCatalog | null {
 }
 
 /**
- * A catalog synced from Artificial Analysis keeps its model scores, but pools and models
- * added to the bundled catalog in later releases are added to it, and the bundled pool
- * settings (how a pool reads its quota windows) replace stale copies of them.
+ * Model fields that describe how QuotaMax reads a model's quota rather than how good it
+ * is. The bundled catalog owns them, so a catalog synced before a field existed (or
+ * changed) still gets it; an Artificial Analysis sync never writes them.
+ */
+function structuralFields(m: CatalogModel): Pick<CatalogModel, "modelWindowId"> {
+  return m.modelWindowId !== undefined ? { modelWindowId: m.modelWindowId } : {};
+}
+
+/**
+ * A catalog synced from Artificial Analysis keeps its model scores (intelligence, coding,
+ * efficiency, aaMetrics and the rest), but:
+ * - models present in both take their structural fields from the bundled catalog,
+ * - pools and models added to the bundled catalog in later releases are added,
+ * - the bundled pool settings (how a pool reads its quota windows) replace stale copies.
  */
 export function mergeWithBundled(synced: ModelCatalog, bundled: ModelCatalog): ModelCatalog {
   const pools: Record<string, CatalogPool> = { ...synced.pools, ...bundled.pools };
   const key = (m: CatalogModel) => `${m.pool}|${m.provider}|${m.id}`;
+  const bundledByKey = new Map(bundled.models.map((m) => [key(m), m]));
   const have = new Set(synced.models.map(key));
+  const models = synced.models.map((m) => {
+    const b = bundledByKey.get(key(m));
+    return b ? { ...m, ...structuralFields(b) } : m;
+  });
   return {
     ...synced,
     pools,
-    models: [...synced.models, ...bundled.models.filter((m) => !have.has(key(m)))],
+    models: [...models, ...bundled.models.filter((m) => !have.has(key(m)))],
   };
 }
 

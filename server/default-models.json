@@ -27,7 +27,7 @@
       "paseoProvider": "antigravity",
       "shortWindowIds": ["five_hour"],
       "weeklyWindowIds": ["weekly"],
-      "hosts": ["orca"]
+      "hosts": ["paseo", "orca"]
     },
     "antigravity:3p": {
       "label": "Antigravity (Claude & GPT)",
@@ -37,7 +37,7 @@
       "paseoProvider": "antigravity",
       "shortWindowIds": ["five_hour"],
       "weeklyWindowIds": ["weekly"],
-      "hosts": ["orca"]
+      "hosts": ["paseo", "orca"]
     },
     "glm": {
       "label": "GLM Coding Plan",
@@ -46,7 +46,7 @@
       "shortWindowId": "five_hour",
       "paseoProvider": "pi",
       "sourceIds": ["zai"],
-      "hosts": ["orca"]
+      "hosts": ["paseo", "orca"]
     },
     "alibaba": {
       "label": "Alibaba Token Plan",

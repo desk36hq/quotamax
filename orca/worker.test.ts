@@ -111,6 +111,37 @@ test("the refresh command re-polls and says how many pools are tracked", async (
   }
 });
 
+test("stopping during startup leaves no polling timer behind", async () => {
+  // Hold the burn-history read open, stop the worker, then let the read finish.
+  let releaseHistory!: (value: null) => void;
+  let fetches = 0;
+  const noop = () => ({ dispose() {} });
+  const fakeOrca = {
+    storage: { get: () => new Promise<null>((r) => (releaseHistory = r)), set: async () => {} },
+    settings: { get: async () => true, onDidChange: noop },
+    secrets: { get: async () => null, set: async () => {}, delete: async () => {} },
+    panels: { handle: noop, post: () => {} },
+    commands: { register: noop },
+    host: { has: () => false, call: async () => ({}) },
+    log: () => {},
+  };
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "qa-orca-worker-"));
+  try {
+    activateWith(fakeOrca as never, {
+      quotaSource: { name: "Orca", displayName: "Orca", fetch: async () => (fetches++, reports(0)) },
+      dataDir,
+      fallbackCatalogPaths: [],
+      costs: { getSummary: async () => emptyCosts },
+    });
+    await deactivate();
+    releaseHistory(null);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(fetches, 0, "the advisor never started polling");
+  } finally {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
 test("status bar names the pool to use now", () => {
   const item = statusBarFor({
     generatedAt: "",

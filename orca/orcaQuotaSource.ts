@@ -140,7 +140,7 @@ export function resolveOrcaCli(
 ): string | null {
   const fromEnv = env.ORCA_CLI_COMMAND?.trim();
   if (fromEnv) {
-    const found = findOnPath(fromEnv, env);
+    const found = findOnPath(fromEnv, env, platform);
     if (found) return found;
   }
   const appDir = path.dirname(execPath);
@@ -151,10 +151,10 @@ export function resolveOrcaCli(
         ? [path.join(appDir, "resources", "bin", "orca.exe"), path.join(appDir, "resources", "bin", "orca.cmd")]
         : [path.join(appDir, "resources", "bin", "orca-ide"), path.join(appDir, "resources", "bin", "orca")];
   for (const candidate of bundled) {
-    const found = findOnPath(candidate, env);
+    const found = findOnPath(candidate, env, platform);
     if (found) return found;
   }
-  return findOnPath(platform === "linux" ? "orca-ide" : "orca", env);
+  return findOnPath(platform === "linux" ? "orca-ide" : "orca", env, platform);
 }
 
 /**

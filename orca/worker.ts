@@ -99,12 +99,15 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   });
 
   let unsubscribe: (() => void) | null = null;
+  // Set when the worker stops, so a stop during startup can't be followed by polling.
+  let disposed = false;
   // Restore the burn-rate history first, so a restart keeps the 15-minute ETA estimate.
   const ready = orca.storage
     .get(HISTORY_KEY)
     .then((saved) => service.importHistory(saved))
     .catch(() => {})
     .then(() => {
+      if (disposed) return;
       unsubscribe = service.subscribe((snapshot) => {
         orca.panels.post("quotamax.snapshot", snapshot);
         void orca.storage.set(HISTORY_KEY, service.exportHistory() as unknown as JsonValue).catch(() => {});
@@ -148,6 +151,7 @@ export function activateWith(orca: OrcaWorkerApi, deps: WorkerDeps): void {
   });
 
   stopCurrent = async () => {
+    disposed = true;
     settingsSub.dispose();
     unsubscribe?.();
     await orca.storage.set(HISTORY_KEY, service.exportHistory() as unknown as JsonValue).catch(() => {});

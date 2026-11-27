@@ -30,23 +30,49 @@ function isFile(p: string): boolean {
   }
 }
 
+/** A file the OS would run: on POSIX it must be executable, on Windows its extension decides. */
+function isRunnable(p: string, windows: boolean): boolean {
+  if (!isFile(p)) return false;
+  if (windows) return true;
+  try {
+    fs.accessSync(p, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Resolves a bare command name the way the OS shell would (PATH, plus PATHEXT on
- * Windows), or null when it is not installed. Checking up front gives a missing CLI the
- * same answer on every OS and locale; on Windows, a missing command run through cmd.exe
- * otherwise exits 1 with a localized message instead of failing with ENOENT.
+ * Resolves a command the way the OS shell would (PATH, plus PATHEXT on Windows), or null
+ * when it is not installed. Checking up front gives a missing CLI the same answer on every
+ * OS and locale; on Windows, a missing command run through cmd.exe otherwise exits 1 with
+ * a localized message instead of failing with ENOENT.
+ * - Windows: a name that already ends in a PATHEXT extension (`orca.exe`) is looked up as
+ *   is; any other name only with an extension added, since only those are runnable.
+ * - POSIX: only executable files count, so a non-executable file earlier in PATH does not
+ *   shadow the real binary.
  */
-export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  if (command.includes("/") || command.includes("\\")) return isFile(command) ? command : null;
+export function findOnPath(
+  command: string,
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
+): string | null {
+  const windows = platform === "win32";
+  if (command.includes("/") || command.includes("\\")) return isRunnable(command, windows) ? command : null;
+  // PATH comes from this machine, so it splits on this machine's separator.
   const dirs = (env.PATH ?? env.Path ?? "").split(path.delimiter).filter(Boolean);
-  const exts = isWindows
-    ? ["", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
-    : [""];
+  let exts = [""];
+  if (windows) {
+    const pathExt = (env.PATHEXT ?? env.PathExt ?? ".COM;.EXE;.BAT;.CMD")
+      .split(";")
+      .filter(Boolean)
+      .map((e) => e.toLowerCase());
+    exts = pathExt.includes(path.extname(command).toLowerCase()) ? [""] : pathExt;
+  }
   for (const dir of dirs) {
     for (const ext of exts) {
-      const candidate = path.join(dir, command + ext.toLowerCase());
-      // On Windows only an extension makes a file runnable.
-      if ((!isWindows || ext) && isFile(candidate)) return candidate;
+      const candidate = path.join(dir, command + ext);
+      if (isRunnable(candidate, windows)) return candidate;
     }
   }
   return null;

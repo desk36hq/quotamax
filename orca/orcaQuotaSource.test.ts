@@ -91,19 +91,23 @@ test("maps Orca rate limits onto the catalog's source and window ids", () => {
 test("resolves the Orca CLI from ORCA_CLI_COMMAND, then beside the app, never the Linux screen reader", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "qa-orca-cli-"));
   try {
+    // Executable, so the checks hold on POSIX hosts too (only executables count there).
+    const touch = (p: string) => fs.writeFileSync(p, "", { mode: 0o755 });
     const exe = path.join(dir, process.platform === "win32" ? "orca.exe" : "orca");
-    fs.writeFileSync(exe, "");
+    touch(exe);
     assert.equal(resolveOrcaCli({ ORCA_CLI_COMMAND: exe, PATH: "" }, "/nowhere/app"), exe);
 
     const appDir = path.join(dir, "app");
     fs.mkdirSync(path.join(appDir, "resources", "bin"), { recursive: true });
     const bundled = path.join(appDir, "resources", "bin", "orca.exe");
-    fs.writeFileSync(bundled, "");
+    touch(bundled);
     assert.equal(resolveOrcaCli({ PATH: "" }, path.join(appDir, "Orca.exe"), "win32"), bundled);
 
     // On Linux a bare `orca` on PATH is the GNOME screen reader: only orca-ide counts.
-    fs.writeFileSync(path.join(dir, "orca"), "");
+    touch(path.join(dir, "orca"));
     assert.equal(resolveOrcaCli({ PATH: dir }, "/nowhere/app", "linux"), null);
+    touch(path.join(dir, "orca-ide"));
+    assert.equal(resolveOrcaCli({ PATH: dir }, "/nowhere/app", "linux"), path.join(dir, "orca-ide"));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

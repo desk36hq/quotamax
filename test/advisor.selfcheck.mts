@@ -118,4 +118,31 @@ assert.ok(merged.pools.kimi && merged.pools.copilot);
 assert.equal(merged.models.find((m) => m.id === "claude-opus-5-5" && m.pool === "claude")!.intelligence, 1);
 assert.ok(merged.models.some((m) => m.pool === "muse"));
 
-console.log("ALL ADVISOR CHECKS PASSED (A–H)");
+// I) A catalog synced before `modelWindowId` existed (claude-fable-5-2 is on main without it)
+//    gets the bundled structural field, and keeps its synced scores and metrics.
+const preFable = parseCatalog(bundled)!;
+const aaMetrics = { name: "Claude Fable 5.2", slug: "fable-5-2", intelligenceIndex: 65, codingIndex: 70, blendedPricePer1M: 20, medianOutputTps: 50, syncedAt: "2026-11-20" };
+preFable.models = preFable.models.map((m) => {
+  if (m.id !== "claude-fable-5-2" || m.pool !== "claude") return m;
+  const { modelWindowId: _dropped, ...rest } = m;
+  return { ...rest, intelligence: 42, coding: 43, efficiency: 44, aaMetrics };
+});
+assert.equal(preFable.models.find((m) => m.id === "claude-fable-5-2")!.modelWindowId, undefined);
+const fableMerged = mergeWithBundled(preFable, parseCatalog(bundled)!).models.find(
+  (m) => m.id === "claude-fable-5-2" && m.pool === "claude"
+)!;
+assert.equal(fableMerged.modelWindowId, "weekly_model_fable");
+assert.deepEqual([fableMerged.intelligence, fableMerged.coding, fableMerged.efficiency], [42, 43, 44]);
+assert.deepEqual(fableMerged.aaMetrics, aaMetrics);
+
+// J) End to end: that older catalog synced on disk still lets Fable's own limit demote it.
+fs.mkdirSync(path.join(home, "data"), { recursive: true });
+fs.writeFileSync(path.join(home, "data", "models.json"), JSON.stringify(preFable));
+const fromDisk = await snapshotFor(claudeWith(97));
+assert.match(
+  fromDisk.recommendations.frontier.find((r) => r.modelId === "claude-fable-5-2")!.notes,
+  /^Weekly · Fable limit nearly used up/
+);
+fs.rmSync(path.join(home, "data", "models.json"));
+
+console.log("ALL ADVISOR CHECKS PASSED (A–J)");
