@@ -24,7 +24,7 @@ A [Paseo](https://paseo.sh) plugin for **token-maxxing** across multiple AI codi
 Requires Paseo `>=0.17.3` (Node `>=22.13` recommended for Antigravity SQLite cost scanning; other providers work on older Node versions).
 
 ```bash
-paseo plugin add https://github.com/adamrbell/paseo-quota-advisor.git
+paseo plugin add https://github.com/desk36hq/paseo-quota-advisor.git
 ```
 
 ## Development
