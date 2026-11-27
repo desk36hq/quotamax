@@ -80,7 +80,33 @@ export interface ViewState {
   resetKind: BankedResetKind;
   resetCount: number;
   resetExpiry: string;
+  resetExpiryInput: string;
   savingReset: boolean;
+}
+
+function toDatetimeLocalValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatExpiryDateTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function resetKindLabel(kind: BankedResetKind, count: number): string {
+  const base =
+    kind === "5h" ? "5-Hour" : kind === "weekly" ? "Weekly" : kind === "fable" ? "Fable" : "Full";
+  return `${base} ${count === 1 ? "Reset" : "Resets"}`;
 }
 
 export function initialState(): ViewState {
@@ -113,6 +139,7 @@ export function initialState(): ViewState {
     resetKind: "weekly",
     resetCount: 1,
     resetExpiry: "7d",
+    resetExpiryInput: toDatetimeLocalValue(Date.now() + 7 * 24 * 3_600_000),
     savingReset: false,
   };
 }
@@ -298,7 +325,7 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
   const advice = pool.resetAdvice;
   const adviceHtml =
     advice && advice.action !== "hold"
-      ? `<div class="qm-reset-advice is-${advice.action === "pop_now" ? "ok" : advice.severity === "urgent" ? "danger" : "warn"}"><strong>⚡ ${esc(advice.headline)}</strong><span>${esc(advice.detail)}</span></div>`
+      ? `<div class="qm-reset-advice is-${advice.action === "pop_now" ? "ok" : advice.severity === "urgent" ? "danger" : "warn"}"><strong>${esc(advice.headline)}</strong><span>${esc(advice.detail)}</span></div>`
       : "";
   const bankedHtml = banked.length
     ? `<div class="qm-banked">${adviceHtml}<div class="qm-banked-pills">${banked
@@ -306,7 +333,9 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
           const urgent = r.remainingHours != null && r.remainingHours <= 12;
           const soon = r.remainingHours != null && r.remainingHours <= 48;
           const cls = urgent ? "is-danger" : soon ? "is-warn" : "";
-          const exp = r.remainingHours != null ? ` · exp ${formatDuration(r.remainingHours)}` : "";
+          const expDate = formatExpiryDateTime(r.expiresAt);
+          const exp =
+            r.remainingHours != null ? ` · Exp ${expDate} (${formatDuration(r.remainingHours)})` : "";
           const useBtn =
             r.source === "manual"
               ? button("qm-use-reset", "consume-reset", "Mark used", {
@@ -314,7 +343,7 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
                   label: `Mark ${r.kind} reset used`,
                 })
               : "";
-          return `<span class="qm-banked-pill ${cls}"><span>⚡ ${r.count}× ${esc(r.kind)}${esc(exp)}</span>${useBtn}</span>`;
+          return `<span class="qm-banked-pill ${cls}">${icons.refresh(11)}<span>${r.count} ${esc(resetKindLabel(r.kind, r.count))}${esc(exp)}</span>${useBtn}</span>`;
         })
         .join("")}</div></div>`
     : "";
@@ -328,6 +357,32 @@ function renderPool(pool: PoolStatus, poolCost: PoolCostBreakdown | undefined, c
   ${bankedHtml}
   <div class="qm-burn"><span>${esc(burnText)}</span><span class="qm-eta${sev === "idle" ? "" : ` is-${sev}`}">${sev === "idle" ? "" : icons.flame(11)}${esc(pool.burn.etaLabel)}</span></div>
 </div>`;
+}
+
+function renderBankedSummary(pools: PoolStatus[]): string {
+  const items = pools.flatMap((p) => (p.bankedResets ?? []).map((r) => ({ pool: p, reset: r })));
+  if (items.length === 0) return "";
+  const rows = items
+    .map(({ pool, reset }) => {
+      const urgent = reset.remainingHours != null && reset.remainingHours <= 12;
+      const soon = reset.remainingHours != null && reset.remainingHours <= 48;
+      const cls = urgent ? "is-danger" : soon ? "is-warn" : "";
+      const expDate = formatExpiryDateTime(reset.expiresAt);
+      const expText =
+        reset.remainingHours != null
+          ? `Expires ${expDate} (${formatDuration(reset.remainingHours)} left)`
+          : "No expiry set";
+      const right =
+        reset.source === "manual"
+          ? button("qm-btn", "consume-reset", "Mark used", {
+              value: reset.id,
+              label: `Mark ${pool.label} reset used`,
+            })
+          : `<span class="qm-live-tag">LIVE</span>`;
+      return `<div class="qm-banked-row ${cls}"><div class="qm-banked-row-main"><strong>${esc(pool.label)} · ${reset.count} ${esc(resetKindLabel(reset.kind, reset.count))}</strong><span>${esc(expText)}</span></div>${right}</div>`;
+    })
+    .join("");
+  return `<div class="qm-banked-summary"><div class="qm-banked-summary-head"><strong>${icons.refresh(12)} Banked Resets Ready</strong><span>Use before expiry</span></div>${rows}</div>`;
 }
 
 function renderAddResetForm(s: ViewState, pools: PoolStatus[]): string {
@@ -366,7 +421,8 @@ function renderAddResetForm(s: ViewState, pools: PoolStatus[]): string {
   <div class="qm-reset-form-title">Log banked reset</div>
   <div class="qm-chip-row">${poolBtns}</div>
   <div class="qm-reset-form-row"><div class="qm-chip-row">${kindBtns}</div><div class="qm-chip-row"><span class="qm-hint">Qty:</span>${qtyBtns}</div></div>
-  <div class="qm-reset-form-row"><div class="qm-chip-row">${expBtns}</div>${button("qm-btn is-primary", "save-reset", s.savingReset ? "Saving…" : "Save", { disabled: s.savingReset })}</div>
+  <div class="qm-chip-row">${expBtns}</div>
+  <div class="qm-reset-form-row"><input id="qm-reset-expires" class="qm-input qm-date-input" type="datetime-local" value="${esc(s.resetExpiryInput)}" aria-label="Reset expiry date and time">${button("qm-btn is-primary", "save-reset", s.savingReset ? "Saving…" : "Save", { disabled: s.savingReset })}</div>
 </div>`;
 }
 
@@ -388,6 +444,7 @@ function renderPools(s: ViewState, tracked: PoolStatus[], untracked: PoolStatus[
     ${button(`qm-btn${s.addResetOpen ? " is-active" : ""}`, "toggle-add-reset", s.addResetOpen ? "Close" : "+ Reset", { label: "Log banked reset", pressed: s.addResetOpen })}
   </div>
   ${renderAddResetForm(s, allPools)}
+  ${renderBankedSummary(allPools)}
   ${tracked.length ? `<div class="qm-pools">${tracked.map((p) => renderPool(p, costByPool.get(p.pool), s.costWindow)).join("")}</div>` : ""}
   ${untrackedHtml}
 </section>`;

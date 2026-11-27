@@ -9,6 +9,11 @@ import {
   discoverAlibaba,
   fetchAlibabaUsage,
 } from "./server/alibabaUsage";
+import {
+  antigravityInputSchema,
+  discoverAntigravity,
+  fetchAntigravityUsage,
+} from "./server/antigravityUsage";
 import { CostEstimatorService } from "./server/costEstimator";
 import {
   addBankedResetRpc,
@@ -33,6 +38,16 @@ export default function contribute(server: PluginServerContext) {
     input: alibabaInputSchema,
     discover: (scope) => (scope.kind === "global" ? discoverAlibaba() : Promise.resolve([])),
     fetch: fetchAlibabaUsage,
+  });
+
+  // Restores Antigravity quota tracking on Paseo 0.18+ via the official `agy -p /usage` CLI.
+  server.registerUsageSource({
+    id: "antigravity",
+    label: "Antigravity",
+    providers: ["antigravity"],
+    input: antigravityInputSchema,
+    discover: (scope) => (scope.kind === "global" ? discoverAntigravity() : Promise.resolve([])),
+    fetch: fetchAntigravityUsage,
   });
 
   const readSettings = async () => {

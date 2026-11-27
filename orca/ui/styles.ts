@@ -176,6 +176,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--orca-ring, 
 .qm-chip-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .qm-chip-btn { padding: 3px 7px; border-radius: 6px; border: 1px solid var(--qm-border); background: var(--qm-s1); color: var(--qm-muted); font: inherit; font-size: 10.5px; font-weight: 500; cursor: pointer; }
 .qm-chip-btn.is-active { border-color: var(--qm-accent); background: rgba(59, 130, 246, .14); color: var(--qm-accent); font-weight: 700; }
+.qm-date-input { padding: 5px 8px; font-size: 11.5px; font-family: var(--qm-mono); }
+.qm-banked-summary { background: rgba(59, 130, 246, .1); border: 1px solid rgba(59, 130, 246, .35); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.qm-banked-summary-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.qm-banked-summary-head strong { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: var(--qm-fg); }
+.qm-banked-summary-head span { font-size: 10.5px; color: var(--qm-muted); }
+.qm-banked-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--qm-s0); border: 1px solid var(--qm-border); border-radius: 8px; padding: 7px 9px; }
+.qm-banked-row.is-warn { border-color: rgba(245, 158, 11, .4); }
+.qm-banked-row.is-danger { border-color: rgba(239, 68, 68, .45); }
+.qm-banked-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qm-banked-row-main strong { font-size: 12px; font-weight: 700; color: var(--qm-fg); }
+.qm-banked-row-main span { font-size: 11px; font-weight: 600; font-family: var(--qm-mono); color: var(--qm-accent); }
+.qm-banked-row.is-warn .qm-banked-row-main span { color: var(--qm-warning); }
+.qm-banked-row.is-danger .qm-banked-row-main span { color: var(--qm-danger); }
+.qm-live-tag { padding: 2.5px 7px; border-radius: 6px; background: rgba(52, 211, 153, .14); color: var(--qm-success); font-size: 10px; font-weight: 700; }
 
 /* Costs */
 .qm-kpis { display: flex; gap: 8px; }

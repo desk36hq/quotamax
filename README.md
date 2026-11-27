@@ -78,7 +78,7 @@ QuotaMax runs the same advisor, catalog and cost estimator on both hosts. These 
 |---|:---:|:---:|---|
 | Claude (incl. Fable weekly limit) | ✅ | ✅ | |
 | Codex | ✅ | ✅ | |
-| Antigravity (Gemini) · Antigravity (Claude & GPT) | ⚠️ | ✅ | **Paseo:** works with Paseo 0.17.x or a community usage plugin that reports Antigravity windows; Paseo 0.18's built-in sources don't report them yet. **Orca:** read from Orca's Antigravity rate limits. |
+| Antigravity (Gemini) · Antigravity (Claude & GPT) | ✅ | ✅ | **Paseo:** QuotaMax registers an official `agy -p /usage` source (zero OAuth scraping). **Orca:** read from Orca's Antigravity rate limits. |
 | GLM Coding Plan | ⚠️ | ✅ | **Paseo:** works with Paseo 0.17.x or a community usage plugin (e.g. `glm-usage`); Paseo 0.18's built-in Z.ai source doesn't report windows yet. **Orca:** read as ZCode. |
 | Alibaba Token Plan | ✅ | ✅ | Needs the `bl` or `qwencloud` CLI logged in, on both hosts. |
 | Kimi Code | ✅ | ✅ | |

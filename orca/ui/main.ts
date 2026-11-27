@@ -172,14 +172,29 @@ async function syncAa(from: string): Promise<void> {
   }
 }
 
+function toDatetimeLocalValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 async function saveBankedReset(): Promise<void> {
   if (state.savingReset) return;
   const pools = state.snapshot ? sortPools(state.snapshot.pools) : { tracked: [], untracked: [] };
   const targetPool = state.resetPool || pools.tracked[0]?.pool || pools.untracked[0]?.pool || "";
   if (!targetPool) return;
-  const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === state.resetExpiry);
-  const expiresAt =
-    preset && preset.hours != null ? new Date(Date.now() + preset.hours * 3_600_000).toISOString() : null;
+  let expiresAt: string | null = null;
+  if (state.resetExpiry !== "none") {
+    const parsed = state.resetExpiryInput ? Date.parse(state.resetExpiryInput) : NaN;
+    if (Number.isFinite(parsed)) {
+      expiresAt = new Date(parsed).toISOString();
+    } else {
+      const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === state.resetExpiry);
+      if (preset && preset.hours != null) {
+        expiresAt = new Date(Date.now() + preset.hours * 3_600_000).toISOString();
+      }
+    }
+  }
   state.savingReset = true;
   render();
   try {
@@ -288,9 +303,15 @@ root.addEventListener("click", (event) => {
       if (Number.isInteger(n) && n >= 1 && n <= 99) state.resetCount = n;
       break;
     }
-    case "reset-expiry":
-      if (RESET_EXPIRY_PRESETS.some((p) => p.id === value)) state.resetExpiry = value;
+    case "reset-expiry": {
+      const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === value);
+      if (preset) {
+        state.resetExpiry = value;
+        state.resetExpiryInput =
+          preset.hours != null ? toDatetimeLocalValue(Date.now() + preset.hours * 3_600_000) : "";
+      }
       break;
+    }
     case "save-reset":
       void saveBankedReset();
       return;
@@ -305,10 +326,16 @@ root.addEventListener("click", (event) => {
 
 root.addEventListener("input", (event) => {
   const el = event.target as HTMLInputElement;
-  if (el.id !== "qm-key") return;
-  state.keyDraft = el.value;
-  state.keyNotice = null;
-  render();
+  if (el.id === "qm-key") {
+    state.keyDraft = el.value;
+    state.keyNotice = null;
+    render();
+    return;
+  }
+  if (el.id === "qm-reset-expires") {
+    state.resetExpiryInput = el.value;
+    state.resetExpiry = el.value ? "custom" : "none";
+  }
 });
 
 root.addEventListener("keydown", (event) => {

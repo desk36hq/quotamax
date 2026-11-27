@@ -13,6 +13,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import {
@@ -155,6 +156,39 @@ function modeLabel(mode: BurnMode, pace: number | null): string {
   return mode;
 }
 
+function formatExpiryDateTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function toDatetimeLocalValue(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseDatetimeInput(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const normalized = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function resetKindLabel(kind: BankedResetKind, count: number): string {
+  const base =
+    kind === "5h" ? "5-Hour" : kind === "weekly" ? "Weekly" : kind === "fable" ? "Fable" : "Full";
+  return `${base} ${count === 1 ? "Reset" : "Resets"}`;
+}
+
 function formatUsd(amount: number): string {
   if (!Number.isFinite(amount) || amount <= 0) return "$0.00";
   if (amount < 0.01) return "<$0.01";
@@ -207,6 +241,9 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
   const [resetKind, setResetKind] = useState<BankedResetKind>("weekly");
   const [resetCount, setResetCount] = useState<number>(1);
   const [resetExpiry, setResetExpiry] = useState<string>("7d");
+  const [resetExpiryInput, setResetExpiryInput] = useState<string>(() =>
+    toDatetimeLocalValue(Date.now() + 7 * 24 * 3_600_000)
+  );
   const [savingReset, setSavingReset] = useState(false);
   const [costWindow, setCostWindow] = useState<CostWindow>(() => readInitialCostWindow(tab?.state));
   const [costs, setCosts] = useState<CostEstimateSummary | null>(null);
@@ -448,11 +485,16 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
     if (savingReset) return;
     const targetPool = resetPool || trackedPools[0]?.pool || untrackedPools[0]?.pool || "";
     if (!targetPool) return;
-    const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === resetExpiry);
-    const expiresAt =
-      preset && preset.hours != null
-        ? new Date(Date.now() + preset.hours * 3_600_000).toISOString()
-        : null;
+    let expiresAt: string | null = null;
+    if (resetExpiry !== "none") {
+      expiresAt = parseDatetimeInput(resetExpiryInput);
+      if (!expiresAt) {
+        const preset = RESET_EXPIRY_PRESETS.find((p) => p.id === resetExpiry);
+        if (preset && preset.hours != null) {
+          expiresAt = new Date(Date.now() + preset.hours * 3_600_000).toISOString();
+        }
+      }
+    }
     setSavingReset(true);
     try {
       const next = await runAddBankedReset({
@@ -469,7 +511,7 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
     } finally {
       setSavingReset(false);
     }
-  }, [applySnapshot, resetCount, resetExpiry, resetKind, resetPool, runAddBankedReset, savingReset, trackedPools, untrackedPools]);
+  }, [applySnapshot, resetCount, resetExpiry, resetExpiryInput, resetKind, resetPool, runAddBankedReset, savingReset, trackedPools, untrackedPools]);
 
   const handleConsumeReset = useCallback(
     async (id: string) => {
@@ -978,15 +1020,20 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
                   </View>
                 </View>
 
-                {/* Expiry presets + Save */}
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, flex: 1 }}>
+                {/* Expiry presets + Date/Time Picker + Save */}
+                <View style={{ gap: 6 }}>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                     {RESET_EXPIRY_PRESETS.map((ex) => {
                       const active = resetExpiry === ex.id;
                       return (
                         <Pressable
                           key={ex.id}
-                          onPress={() => setResetExpiry(ex.id)}
+                          onPress={() => {
+                            setResetExpiry(ex.id);
+                            setResetExpiryInput(
+                              ex.hours != null ? toDatetimeLocalValue(Date.now() + ex.hours * 3_600_000) : ""
+                            );
+                          }}
                           style={{
                             paddingHorizontal: 6,
                             paddingVertical: 2.5,
@@ -1010,24 +1057,181 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
                     })}
                   </View>
 
-                  <Pressable
-                    onPress={() => void handleAddReset()}
-                    disabled={savingReset}
-                    style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 4.5,
-                      borderRadius: 7,
-                      backgroundColor: colors.accent,
-                      opacity: savingReset ? 0.6 : 1,
-                    }}
-                  >
-                    <Text style={{ color: colors.accentForeground, fontSize: 11, fontWeight: "700" }}>
-                      {savingReset ? "Saving…" : "Save"}
-                    </Text>
-                  </Pressable>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {Platform.OS === "web" ? (
+                      React.createElement("input", {
+                        type: "datetime-local",
+                        value: resetExpiryInput,
+                        onChange: (e: { target: { value: string } }) => {
+                          const val = e.target.value;
+                          setResetExpiryInput(val);
+                          setResetExpiry(val ? "custom" : "none");
+                        },
+                        "aria-label": "Reset expiry date and time",
+                        style: {
+                          flex: 1,
+                          minWidth: 0,
+                          padding: "5px 8px",
+                          borderRadius: 7,
+                          border: `1px solid ${colors.border}`,
+                          backgroundColor: colors.surface1,
+                          color: colors.foreground,
+                          fontSize: 11.5,
+                          fontFamily: monoFont(),
+                          colorScheme: "dark",
+                        },
+                      })
+                    ) : (
+                      <TextInput
+                        value={resetExpiryInput}
+                        onChangeText={(val) => {
+                          setResetExpiryInput(val);
+                          setResetExpiry(val.trim() ? "custom" : "none");
+                        }}
+                        placeholder="YYYY-MM-DD HH:MM (blank = none)"
+                        placeholderTextColor={colors.foregroundMuted}
+                        style={{
+                          flex: 1,
+                          paddingHorizontal: 8,
+                          paddingVertical: 5,
+                          borderRadius: 7,
+                          borderWidth: 1,
+                          borderColor: colors.border,
+                          backgroundColor: colors.surface1,
+                          color: colors.foreground,
+                          fontSize: 11.5,
+                          fontFamily: monoFont(),
+                        }}
+                      />
+                    )}
+
+                    <Pressable
+                      onPress={() => void handleAddReset()}
+                      disabled={savingReset}
+                      style={{
+                        paddingHorizontal: 11,
+                        paddingVertical: 6,
+                        borderRadius: 7,
+                        backgroundColor: colors.accent,
+                        opacity: savingReset ? 0.6 : 1,
+                      }}
+                    >
+                      <Text style={{ color: colors.accentForeground, fontSize: 11, fontWeight: "700" }}>
+                        {savingReset ? "Saving…" : "Save"}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             ) : null}
+
+            {/* Prominent Banked Resets Summary Banner (when any pool has banked resets) */}
+            {(() => {
+              const allBanked = [...trackedPools, ...untrackedPools].flatMap((p) =>
+                (p.bankedResets ?? []).map((r) => ({ pool: p, reset: r }))
+              );
+              if (allBanked.length === 0) return null;
+              return (
+                <View
+                  style={{
+                    backgroundColor: "rgba(59, 130, 246, 0.1)",
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: "rgba(59, 130, 246, 0.35)",
+                    padding: 10,
+                    gap: 6,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Icon name="RefreshCw" size={12} color={colors.accent} />
+                      <Text style={{ color: colors.foreground, fontSize: 11.5, fontWeight: "700" }}>
+                        Banked Resets Ready
+                      </Text>
+                    </View>
+                    <Text style={{ color: colors.foregroundMuted, fontSize: 10.5 }}>
+                      Use before expiry
+                    </Text>
+                  </View>
+                  {allBanked.map(({ pool, reset }) => {
+                    const urgent = reset.remainingHours != null && reset.remainingHours <= 12;
+                    const soon = reset.remainingHours != null && reset.remainingHours <= 48;
+                    const accent = urgent
+                      ? colors.statusDanger
+                      : soon
+                        ? colors.statusWarning
+                        : colors.accent;
+                    const expDate = formatExpiryDateTime(reset.expiresAt);
+                    const expLeft =
+                      reset.remainingHours != null ? formatDuration(reset.remainingHours) : null;
+                    return (
+                      <View
+                        key={reset.id}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 8,
+                          backgroundColor: colors.surface0,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: urgent
+                            ? "rgba(239, 68, 68, 0.45)"
+                            : soon
+                              ? "rgba(245, 158, 11, 0.4)"
+                              : colors.border,
+                          paddingHorizontal: 9,
+                          paddingVertical: 7,
+                        }}
+                      >
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: "700" }}>
+                            {pool.label} · {reset.count} {resetKindLabel(reset.kind, reset.count)}
+                          </Text>
+                          <Text style={{ color: accent, fontSize: 11, fontWeight: "600", fontFamily: monoFont() }}>
+                            {expLeft
+                              ? `Expires ${expDate} (${expLeft} left)`
+                              : "No expiry set"}
+                          </Text>
+                        </View>
+                        {reset.source === "manual" ? (
+                          <Pressable
+                            onPress={() => void handleConsumeReset(reset.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Mark ${pool.label} reset used`}
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 6,
+                              borderWidth: 1,
+                              borderColor: colors.border,
+                              backgroundColor: colors.surface1,
+                            }}
+                          >
+                            <Text style={{ color: colors.foreground, fontSize: 10.5, fontWeight: "600" }}>
+                              Mark used
+                            </Text>
+                          </Pressable>
+                        ) : (
+                          <View
+                            style={{
+                              paddingHorizontal: 7,
+                              paddingVertical: 2.5,
+                              borderRadius: 6,
+                              backgroundColor: "rgba(52, 211, 153, 0.14)",
+                            }}
+                          >
+                            <Text style={{ color: colors.statusSuccess, fontSize: 10, fontWeight: "700" }}>
+                              LIVE
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
 
             <View style={{ gap: 8 }}>
               {trackedPools.map((pool) => (
@@ -1252,8 +1456,8 @@ function PoolCard({
       {pool.bankedResets && pool.bankedResets.length > 0 ? (
         <View
           style={{
-            gap: 5,
-            paddingTop: 5,
+            gap: 6,
+            paddingTop: 6,
             borderTopWidth: 1,
             borderTopColor: colors.border,
           }}
@@ -1261,9 +1465,9 @@ function PoolCard({
           {pool.resetAdvice && pool.resetAdvice.action !== "hold" ? (
             <View
               style={{
-                paddingHorizontal: 8,
-                paddingVertical: 5,
-                borderRadius: 7,
+                paddingHorizontal: 9,
+                paddingVertical: 6,
+                borderRadius: 8,
                 backgroundColor:
                   pool.resetAdvice.action === "pop_now"
                     ? "rgba(52, 211, 153, 0.14)"
@@ -1281,7 +1485,7 @@ function PoolCard({
             >
               <Text
                 style={{
-                  fontSize: 11,
+                  fontSize: 11.5,
                   fontWeight: "700",
                   color:
                     pool.resetAdvice.action === "pop_now"
@@ -1291,9 +1495,9 @@ function PoolCard({
                         : colors.statusWarning,
                 }}
               >
-                ⚡ {pool.resetAdvice.headline}
+                {pool.resetAdvice.headline}
               </Text>
-              <Text style={{ color: colors.foregroundMuted, fontSize: 10, marginTop: 1 }}>
+              <Text style={{ color: colors.foregroundMuted, fontSize: 10.5, marginTop: 1 }}>
                 {pool.resetAdvice.detail}
               </Text>
             </View>
@@ -1308,24 +1512,32 @@ function PoolCard({
                 : soon
                   ? colors.statusWarning
                   : colors.accent;
+              const expDate = formatExpiryDateTime(r.expiresAt);
               return (
                 <View
                   key={r.id}
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 5,
-                    paddingHorizontal: 7,
-                    paddingVertical: 2.5,
-                    borderRadius: 6,
+                    gap: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 7,
                     backgroundColor: colors.surface1,
                     borderWidth: 1,
-                    borderColor: colors.border,
+                    borderColor: urgent
+                      ? "rgba(239, 68, 68, 0.45)"
+                      : soon
+                        ? "rgba(245, 158, 11, 0.4)"
+                        : colors.border,
                   }}
                 >
-                  <Text style={{ color: pillColor, fontSize: 10.5, fontWeight: "700", fontFamily: monoFont() }}>
-                    ⚡ {r.count}× {r.kind}
-                    {r.remainingHours != null ? ` · exp ${formatDuration(r.remainingHours)}` : ""}
+                  <Icon name="RefreshCw" size={11} color={pillColor} />
+                  <Text style={{ color: pillColor, fontSize: 11, fontWeight: "700", fontFamily: monoFont() }}>
+                    {r.count} {resetKindLabel(r.kind, r.count)}
+                    {r.remainingHours != null
+                      ? ` · Exp ${expDate} (${formatDuration(r.remainingHours)})`
+                      : ""}
                   </Text>
                   {r.source === "manual" ? (
                     <Pressable
@@ -1333,13 +1545,13 @@ function PoolCard({
                       accessibilityRole="button"
                       accessibilityLabel={`Mark ${r.kind} reset used`}
                       style={{
-                        paddingHorizontal: 5,
-                        paddingVertical: 1,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
                         borderRadius: 4,
                         backgroundColor: colors.surface2,
                       }}
                     >
-                      <Text style={{ color: colors.foregroundMuted, fontSize: 9.5, fontWeight: "600" }}>
+                      <Text style={{ color: colors.foreground, fontSize: 10, fontWeight: "600" }}>
                         Mark used
                       </Text>
                     </Pressable>
