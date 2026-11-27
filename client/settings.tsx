@@ -41,7 +41,7 @@ export function QuotaAdvisorSettings({ theme }: PluginSurfaceProps) {
   if (settings.status === "loading") {
     return (
       <View style={{ padding: 16 }}>
-        <Text style={muted}>Loading Quota Advisor settings…</Text>
+        <Text style={muted}>Loading QuotaMax settings…</Text>
       </View>
     );
   }

@@ -5,8 +5,8 @@ import { Platform } from "react-native";
 import { QuotaAdvisorPanel } from "./client/panel";
 import { QuotaAdvisorSettings } from "./client/settings";
 
-const PANEL_ID = "quota-advisor";
-const SCREEN_ID = "quota-advisor";
+const PANEL_ID = "quotamax";
+const SCREEN_ID = "quotamax";
 const SETTINGS_ID = "settings";
 
 function QuotaSidebarItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
@@ -24,7 +24,7 @@ export default function contribute(client: PluginClientContext) {
 
   const stopPanel = client.addWorkspacePanel({
     id: PANEL_ID,
-    title: "Quota",
+    title: "QuotaMax",
     icon: "Gauge",
     locations: ["explorer", "workspace"],
     Component: (props) => (
@@ -32,26 +32,26 @@ export default function contribute(client: PluginClientContext) {
     ),
   });
 
-  // Global screen + sidebar item so mobile users can open Quota Advisor in 1 tap from the sidebar drawer
+  // Global screen + sidebar item so mobile users can open QuotaMax in 1 tap from the sidebar drawer
   const stopScreen = client.addScreen({
     id: SCREEN_ID,
-    title: "Quota Advisor",
+    title: "QuotaMax",
     Component: (props) => (
       <QuotaAdvisorPanel theme={props.theme} openSettings={() => client.openSettings(SETTINGS_ID)} />
     ),
   });
 
   const stopSidebarItem = client.addSidebarHeaderItem({
-    id: "quota-advisor-nav",
-    title: "Quota Advisor",
+    id: "quotamax-nav",
+    title: "QuotaMax",
     Component: QuotaSidebarItem,
   });
 
   const stopCommand = client.addCommandCenterItem({
-    id: "open-quota-advisor",
-    title: "Open Quota Advisor",
+    id: "open-quotamax",
+    title: "Open QuotaMax",
     icon: "Gauge",
-    keywords: ["quota", "usage", "models", "burn", "limits", "tokens"],
+    keywords: ["quotamax", "quota", "usage", "models", "burn", "limits", "tokens", "cost"],
     context: "workspace",
     onSelect({ openPanel }) {
       openPanel(PANEL_ID, { location: defaultLocation });
@@ -60,7 +60,7 @@ export default function contribute(client: PluginClientContext) {
 
   const stopSettings = client.addSettingsScreen({
     id: SETTINGS_ID,
-    title: "Quota Advisor",
+    title: "QuotaMax",
     icon: "Settings",
     Component: QuotaAdvisorSettings,
   });

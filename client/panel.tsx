@@ -432,7 +432,7 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
             <Icon name="Gauge" size={16} color={colors.accent} />
             <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "700" }}>
-              Quota Advisor
+              QuotaMax
             </Text>
           </View>
           <Text style={{ color: colors.foregroundMuted, fontSize: 11.5 }}>
@@ -471,7 +471,7 @@ export function QuotaAdvisorPanel({ theme, tab, openSettings }: PanelProps) {
           <Pressable
             onPress={openSettings}
             accessibilityRole="button"
-            accessibilityLabel="Quota Advisor settings"
+            accessibilityLabel="QuotaMax settings"
             style={({ pressed }) => ({
               padding: 6,
               borderRadius: 8,

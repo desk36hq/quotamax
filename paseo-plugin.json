@@ -1,6 +1,6 @@
 {
-  "id": "quota-advisor",
-  "name": "Quota Advisor",
+  "id": "quotamax",
+  "name": "QuotaMax",
   "media": [],
   "requirements": {
     "paseo": ">=0.17.3"
